@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quotebook</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header>
+  <div><h1 data-t="title"></h1><p class="sub" data-t="tag"></p></div>
+  <div class="hb"><button id="help" data-t="howBtn"></button><button id="lang">עברית</button></div>
+</header>
+<main>
+<section>
+  <div class="intro" id="intro">
+    <button class="ghost" id="x" aria-label="×">✕</button>
+    <b data-t="introH"></b>
+    <ol><li data-t="s1"></li><li data-t="s2"></li><li data-t="s3"></li></ol>
+    <button class="p" id="ex" data-t="example"></button>
+  </div>
+  <div id="st"></div>
+  <label for="q" data-t="lq"></label>
+  <textarea id="q" dir="auto" data-p="phq"></textarea>
+  <div class="row">
+    <div><label for="b" data-t="lb"></label><input id="b" dir="auto"></div>
+    <div><label for="a" data-t="la"></label><input id="a" dir="auto"></div>
+  </div>
+  <div class="btns">
+    <button class="p" id="save" data-t="save"></button>
+    <button id="png" data-t="png"></button>
+    <button id="share" data-t="share"></button>
+    <button id="shuf" data-t="shuf"></button>
+  </div>
+  <div id="hint" data-t="hint"></div>
+  <h2 data-t="myq"></h2>
+  <p class="info" data-t="myqInfo"></p>
+  <div id="list"></div>
+  <div class="btns">
+    <button id="exp" data-t="exp"></button>
+    <button id="imp" data-t="imp"></button>
+    <input type="file" id="file" accept=".json,application/json" hidden>
+  </div>
+</section>
+<section>
+  <canvas id="cv" width="1080" height="1350"></canvas>
+  <div id="moodrow"><small class="info" data-t="mood"></small><div id="chips"></div></div>
+</section>
+</main>
+<div id="toast"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
