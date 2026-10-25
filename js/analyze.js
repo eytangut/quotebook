@@ -7,7 +7,7 @@ import {plain,segment,wordCount} from './text.js';
    NEUTRAL_Z calibrated score (in standard deviations above "everyday sentences") at which a quote counts as half-emotional
    MIX       anchor score = MIX*mean + (1-MIX)*max over an emotion's anchor sentences
    WHOLE     share of the whole-quote reading vs. the average of its parts (only for multi-part quotes) */
-export const TUNE={TEMP:1.3,NEUTRAL_Z:2.5,MIX:.5,WHOLE:.5};
+export const TUNE={TEMP:2.25,NEUTRAL_Z:0,MIX:.75,WHOLE:.5};
 
 /* Everyday, emotionally flat sentences. An emotion's score on these is its "nothing is going on" baseline. */
 const NEUTRAL_REFS=[
