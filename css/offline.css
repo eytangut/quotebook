@@ -1,0 +1,10 @@
+#qb-storage { margin: 1.2em 0; padding: .6em .9em; border: 1px solid rgba(128,128,128,.4); border-radius: 8px; }
+#qb-storage summary { cursor: pointer; font-weight: 600; }
+#qb-storage .info { font-size: .85em; opacity: .75; margin: .6em 0; overflow-wrap: anywhere; }
+#qb-storage [hidden] { display: none !important; }
+#qb-toast {
+  position: fixed; left: 50%; bottom: 1.5rem; transform: translate(-50%, 1rem);
+  padding: .55em 1.1em; border-radius: 999px; background: #1e2327; color: #fff;
+  font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 50;
+}
+#qb-toast.on { opacity: 1; transform: translate(-50%, 0); }

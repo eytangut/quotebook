@@ -106,3 +106,13 @@ Layered on top of the core app; removing `js/enhance.js` and its `<script>` tag 
 - **Shortcuts**: `Ctrl/Cmd+Enter` save, `Alt+N` new look, `Alt+D` download, `/` search.
 - **Offline / installable**: `sw.js` + `manifest.webmanifest` (bump `V` in `sw.js` to clear caches).
 - **CI**: `.github/workflows/check.yml` syntax-checks every module on push.
+
+
+## Offline & local storage
+
+`js/offline.js` (a classic script loaded before `main.js`) persists the AI model and your quotes to real files.
+
+- **Model**: downloads from Hugging Face / jsDelivr are saved as files and read back on later visits, so clearing the browser cache doesn't force a re-download.
+- **Quotes**: localStorage is mirrored to `quotebook-data.json` (plus up to 10 rolling backups in `backups/`) and restored automatically if the browser data disappears.
+- **Where**: open *Storage & backup* and choose a folder (Chrome/Edge desktop, File System Access API). Without a folder, or in browsers that can't pick one, the browser-private file system (OPFS) is used.
+- **Installable**: `sw.js` + `manifest.webmanifest` + icons. Bump `V` in `sw.js` to clear old app caches.

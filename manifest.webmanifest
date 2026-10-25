@@ -1,11 +1,18 @@
 {
+  "id": "./",
   "name": "Quotebook",
   "short_name": "Quotebook",
   "description": "Save quotes and turn them into mood-matched images, on-device.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
+  "orientation": "any",
+  "categories": ["productivity", "lifestyle"],
   "background_color": "#1e2327",
   "theme_color": "#1e2327",
-  "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
 }
