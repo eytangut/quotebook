@@ -1,0 +1,11 @@
+{
+  "name": "Quotebook",
+  "short_name": "Quotebook",
+  "description": "Save quotes and turn them into mood-matched images, on-device.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#1e2327",
+  "theme_color": "#1e2327",
+  "icons": [{"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+}

@@ -94,3 +94,15 @@ Delete the file and its two lines in `index.js`. Quotes saved earlier keep worki
 - The threshold for using the neutral look when no emotion stands out is in `render.js` (`>=.2`).
 - New interface language: add another block next to `en` and `he` in `i18n.js` and a toggle for it in `main.js`.
 - Fonts are system fonts only. Adding a web font means loading it (`@font-face` or a `<link>`) before the first draw and adding it to `F`.
+
+
+## Extras (enhance.js)
+
+Layered on top of the core app; removing `js/enhance.js` and its `<script>` tag restores the original behaviour.
+
+- **Draft autosave**: the quote/book/author fields survive a reload.
+- **Counter**, **search** over saved quotes (appears once you have 4+).
+- **Export sizes**: Portrait 4:5, Square 1:1, Story 9:16 (blurred fill), plus **copy image** and **copy text**.
+- **Shortcuts**: `Ctrl/Cmd+Enter` save, `Alt+N` new look, `Alt+D` download, `/` search.
+- **Offline / installable**: `sw.js` + `manifest.webmanifest` (bump `V` in `sw.js` to clear caches).
+- **CI**: `.github/workflows/check.yml` syntax-checks every module on push.

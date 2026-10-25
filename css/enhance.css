@@ -1,0 +1,18 @@
+#list [hidden], #lsearch[hidden] { display: none !important; }
+#lsearch {
+  width: 100%; box-sizing: border-box; margin: .5em 0; padding: .55em .8em;
+  font: inherit; color: inherit; background: transparent;
+  border: 1px solid rgba(128,128,128,.45); border-radius: 8px;
+}
+#qcount { margin: .25em 0 .5em; font-size: .8em; opacity: .65; text-align: end; }
+#qb-extra { align-items: center; margin-top: .5em; }
+#qb-extra .qb-size { display: inline-flex; gap: .5em; align-items: center; font-size: .9em; }
+#qb-extra select { font: inherit; padding: .35em .5em; border-radius: 6px; }
+#qb-toast {
+  position: fixed; left: 50%; bottom: 1.5rem; transform: translate(-50%, 1rem);
+  padding: .55em 1.1em; border-radius: 999px; background: #1e2327; color: #fff;
+  font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; z-index: 50;
+}
+#qb-toast.on { opacity: 1; transform: translate(-50%, 0); }
+:focus-visible { outline: 2px solid #6aa9ff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

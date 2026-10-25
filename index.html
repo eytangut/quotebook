@@ -4,7 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Quotebook</title>
+<meta name="description" content="Save quotes in English or Hebrew and turn them into mood-matched images, entirely on-device.">
+<meta name="theme-color" content="#1e2327">
+<meta property="og:title" content="Quotebook">
+<meta property="og:description" content="Turn quotes into mood-matched images, entirely on-device.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/enhance.css">
 </head>
 <body>
 <header>
@@ -19,7 +26,7 @@
     <ol><li data-t="s1"></li><li data-t="s2"></li><li data-t="s3"></li></ol>
     <button class="p" id="ex" data-t="example"></button>
   </div>
-  <div id="st"></div>
+  <div id="st" role="status" aria-live="polite"></div>
   <label for="q" data-t="lq"></label>
   <textarea id="q" dir="auto" data-p="phq"></textarea>
   <div class="row">
@@ -47,8 +54,9 @@
   <div id="moodrow"><small class="info" data-t="mood"></small><div id="chips"></div></div>
 </section>
 </main>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script type="module" src="js/main.js"></script>
+<script type="module" src="js/enhance.js"></script>
 </body>
 </html>
