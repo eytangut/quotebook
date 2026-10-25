@@ -10,7 +10,7 @@ export default {
     en: ['awe, mystery and the universe', 'wisdom, curiosity and deep thought', 'stars and imagination'],
     he: ['יראת כבוד, תעלומה והיקום', 'חוכמה, סקרנות ומחשבה עמוקה', 'כוכבים ודמיון'],
   },
-  keywords: ['star', 'universe', 'mystery', 'wisdom', 'think', 'כוכב', 'יקום', 'חוכמ', 'סוד'],   // fallback matching if the AI model is unavailable
+  keywords: ['star', 'universe', 'cosmos', 'galaxy', 'mystery', 'wisdom', 'wonder', 'awe', 'curious', 'כוכב', 'יקום', 'חוכמ', 'תעלומ', 'פליאה', 'סקרנ'],   // fallback matching if the AI model is unavailable
   style: {f:'geo', w:400, sz:0.95, al:'c', pos:0.5, col:'#f3eeff', ac:'#9ee6ff', fx:'glow', gc:'#4cc9f0', ls:3, fr:'thin'},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

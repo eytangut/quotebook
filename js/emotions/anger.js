@@ -10,7 +10,7 @@ export default {
     en: ['rage, injustice and fury', 'bitter resentment and hatred', 'fight and rebellion'],
     he: ['זעם, עוול וכעס', 'טינה ושנאה', 'מאבק ומרד'],
   },
-  keywords: ['anger', 'rage', 'hate', 'fight', 'war', 'כעס', 'זעם', 'שנא', 'מלחמ'],   // fallback matching if the AI model is unavailable
+  keywords: ['anger', 'angry', 'rage', 'fury', 'hate', 'hatred', 'fight', 'war', 'injustice', 'כעס', 'זעם', 'שנא', 'שנאה', 'מלחמ', 'עוול', 'מרד'],   // fallback matching if the AI model is unavailable
   style: {f:'heavy', w:800, sz:1.08, al:'s', pos:0.5, col:'#fff2ec', ac:'#ff8a6b', fx:'hard', gc:'#d00000', ls:1, up:1, lh:1.15, nq:1},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

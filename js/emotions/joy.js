@@ -7,10 +7,10 @@ export default {
   light: true,                       // true = bright background + dark text
   palette: ['#ffb703', '#fb8500', '#ff5d8f'],   // colors for the background blobs
   anchors: {                       // sentences the AI compares each quote against
-    en: ['joy, delight and laughter', 'this is wonderful, I am so happy', 'celebration and gratitude'],
-    he: ['שמחה, הנאה וצחוק', 'זה נפלא, אני כל כך מאושר', 'חגיגה והודיה'],
+    en: ['joy, delight and laughter', 'this is wonderful, I am so happy', 'a happy celebration and good news'],
+    he: ['שמחה, הנאה וצחוק', 'זה נפלא, אני כל כך מאושר', 'חגיגה וחדשות טובות'],
   },
-  keywords: ['joy', 'happy', 'laugh', 'smile', 'שמח', 'צחוק', 'חיוך', 'אושר'],   // fallback matching if the AI model is unavailable
+  keywords: ['joy', 'happy', 'happiness', 'delight', 'laugh', 'smile', 'cheer*', 'שמח', 'צחוק', 'חיוך', 'אושר'],   // fallback matching if the AI model is unavailable
   style: {f:'sans', w:700, sz:1.04, al:'c', pos:0.5, col:'#fffbe8', ac:'#ffd166', fx:'glow', gc:'#ffb703'},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

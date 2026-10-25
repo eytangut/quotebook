@@ -1,0 +1,1012 @@
+diff --git a/.github/workflows/check.yml b/.github/workflows/check.yml
+index 64389d5..a283099 100644
+--- a/.github/workflows/check.yml
++++ b/.github/workflows/check.yml
+@@ -13,3 +13,5 @@ jobs:
+             cp "$f" /tmp/check.mjs
+             node --check /tmp/check.mjs || { echo "Syntax error in $f"; exit 1; }
+           done
++      - name: Tests
++        run: npm test
+diff --git a/README.md b/README.md
+index 6d6cf7b..031079d 100644
+--- a/README.md
++++ b/README.md
+@@ -19,9 +19,13 @@ index.html            page markup (all visible text comes from js/i18n.js)
+ css/style.css
+ js/main.js            UI wiring: input, saving, export/import, language toggle
+ js/i18n.js            English + Hebrew interface text
+-js/analyze.js         loads the AI model, turns a quote into {emotion: weight}
++js/analyze.js         loads the AI model, turns a quote into {w: {emotion: weight}, n: neutral, arc}
++js/lexicon.js         word-aware keyword matcher (used when the model can't load)
++js/text.js            niqqud stripping, splitting a quote into parts, script detection
+ js/render.js          draws the image: background, motifs, text layout, readability guard
+ js/util.js            seeded random, color helpers, text wrapping
++eval.html, js/eval*.js  measures detection accuracy on labelled quotes (needs the real model)
++test/                 `npm test` (Node, no dependencies): registry, lexicon, text, analyzer
+ js/emotions/
+   index.js            the registry (list of emotions)
+   joy.js ... .js      ONE FILE PER EMOTION
+@@ -90,8 +94,8 @@ Delete the file and its two lines in `index.js`. Quotes saved earlier keep worki
+ 
+ ## Tuning
+ 
+-- `SHARPNESS` in `analyze.js`: how strongly the top emotion dominates (default 60).
+-- The threshold for using the neutral look when no emotion stands out is in `render.js` (`>=.2`).
++- `TUNE` in `analyze.js`: `TEMP` (how decisively the top emotion wins), `NEUTRAL_Z` (how emotional a quote must be before it stops counting as neutral; lower it if clearly emotional quotes show a big Neutral share), `MIX` (mean vs best anchor), `WHOLE` (whole quote vs its parts). Try values in `eval.html`.
++- The neutral look is used when the neutral share beats every emotion, or no emotion reaches `.2` (`flat` in `render.js`).
+ - New interface language: add another block next to `en` and `he` in `i18n.js` and a toggle for it in `main.js`.
+ - Fonts are system fonts only. Adding a web font means loading it (`@font-face` or a `<link>`) before the first draw and adding it to `F`.
+ 
+@@ -116,3 +120,22 @@ Layered on top of the core app; removing `js/enhance.js` and its `<script>` tag
+ - **Quotes**: localStorage is mirrored to `quotebook-data.json` (plus up to 10 rolling backups in `backups/`) and restored automatically if the browser data disappears.
+ - **Where**: open *Storage & backup* and choose a folder (Chrome/Edge desktop, File System Access API). Without a folder, or in browsers that can't pick one, the browser-private file system (OPFS) is used.
+ - **Installable**: `sw.js` + `manifest.webmanifest` + icons. Bump `V` in `sw.js` to clear old app caches.
++
++
++## How detection works
++
++1. **Calibrated scores.** Each quote is compared to every emotion's anchor sentences. Each emotion's score is then measured against its own score on a set of everyday, emotionless sentences (`NEUTRAL_REFS`), so emotions whose anchors are simply "closer to everything" no longer win by default.
++2. **Neutral is a real result.** How *emotional* a quote is (a sigmoid on its strongest calibrated score) is decided separately from *which* emotion (a softmax among emotions). `n` is the neutral share; weights plus `n` sum to 1.
++3. **Emotional arc.** A quote is split into parts (sentences, line breaks, and turns like ", but ..."). Each part is read separately; the overall mix blends the whole quote with its parts. If the dominant mood changes along the way, `arc` lists it in reading order and the image expresses it (see below).
++4. **Hebrew with niqqud/te'amim** (pasted Tanakh text) is reduced to plain letters before analysis.
++5. **Keyword fallback** (`lexicon.js`) matches whole words with simple inflections, English phrases (`never give up`), stems (`memor*`), and Hebrew prefixes (ו/ה/ב/כ/ל/מ/ש). With no hits, the quote is neutral.
++6. **Mood override.** If detection is wrong, pick the mood by hand under the preview; it is saved with the quote.
++
++## How the mood is expressed
++
++- The text style is the strongest emotion's, bent toward the runner-up in proportion to its share (size, weight, spacing, line height, colors blend; a strong runner-up may lend its frame).
++- Neutral quotes get their own muted palette.
++- Arc quotes: the background runs from the opening's mood (top) to the ending's mood (bottom), and a thin **mood ribbon** near the bottom shows one dot per part, in reading direction (mirrored for Hebrew).
++- Very long quotes are cut with an ellipsis instead of overflowing; direction (RTL/LTR) follows the majority script.
++
++Saved quotes store `w`, `n`, `arc` and `pin`. Quotes saved by earlier versions (no `n`/`arc`/`pin`) still open and render.
+diff --git a/css/style.css b/css/style.css
+index eaad8b8..6447c13 100644
+--- a/css/style.css
++++ b/css/style.css
+@@ -32,3 +32,6 @@ h2{font:600 18px Georgia,serif;margin:26px 0 8px}
+ .item{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:#191622}
+ .item q{display:block;font:15px/1.4 Georgia,serif;quotes:none;margin-bottom:4px;max-height:4.2em;overflow:hidden}
+ .item small{color:var(--mut)}.item .btns{margin-top:8px}.item button{padding:6px 10px;font-size:13px}
++#arc{display:block;margin:2px 0 6px}
++#pin{background:#1d1a26;border:1px solid var(--line);color:var(--ink);border-radius:10px;padding:8px 10px;font:inherit;max-width:100%}
++.item .moods{margin:6px 0 0}.item .chip{font-size:11px;padding:1px 8px}
+diff --git a/eval.html b/eval.html
+new file mode 100644
+index 0000000..110ff75
+--- /dev/null
++++ b/eval.html
+@@ -0,0 +1,8 @@
++<!DOCTYPE html>
++<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
++<title>Quotebook – detection eval</title><link rel="stylesheet" href="css/style.css">
++<style>body{padding:18px;max-width:900px;margin:0 auto}label{display:inline-block;margin:6px 14px 6px 0}#miss{font-size:14px;line-height:1.5;color:var(--mut)}#sum{font-weight:600;margin:10px 0}</style></head>
++<body><h1>Detection eval</h1>
++<p class="info">Runs the real model on the labelled sentences in <code>js/eval-set.js</code> and shows how often the top mood is right. Move the sliders to try other settings (they re-score instantly), then copy good values into <code>TUNE</code> in <code>js/analyze.js</code>.</p>
++<div id="st" class="info"></div><div id="knobs"></div><div id="sum"></div><h2>Misses</h2><ul id="miss"></ul>
++<script type="module" src="js/eval.js"></script></body></html>
+diff --git a/index.html b/index.html
+index 2a008ef..758cbaa 100644
+--- a/index.html
++++ b/index.html
+@@ -54,7 +54,8 @@
+ </section>
+ <section>
+   <canvas id="cv" width="1080" height="1350"></canvas>
+-  <div id="moodrow"><small class="info" data-t="mood"></small><div id="chips"></div></div>
++  <div id="moodrow"><small class="info" data-t="mood"></small><div id="chips"></div><small id="arc" class="info" hidden></small>
++    <label for="pin" data-t="pin"></label><select id="pin"></select></div>
+ </section>
+ </main>
+ <div id="toast" role="status" aria-live="polite"></div>
+diff --git a/js/analyze.js b/js/analyze.js
+index b1b9657..8af4ac2 100644
+--- a/js/analyze.js
++++ b/js/analyze.js
+@@ -1,31 +1,104 @@
+ import {EMOTIONS,IDS} from './emotions/index.js';
++import {compile} from './lexicon.js';
++import {plain,segment,wordCount} from './text.js';
+ 
+-const SHARPNESS=60;   // higher = the strongest emotion dominates more
+-let ext=null,anchors=null;
+-const embed=async texts=>(await ext(texts.map(t=>'query: '+t),{pooling:'mean',normalize:true})).tolist();
++/* Tuning knobs (js/eval.js + eval.html let you try them against labelled quotes).
++   TEMP      how sharply the strongest emotion dominates (higher = more decisive)
++   NEUTRAL_Z calibrated score (in standard deviations above "everyday sentences") at which a quote counts as half-emotional
++   MIX       anchor score = MIX*mean + (1-MIX)*max over an emotion's anchor sentences
++   WHOLE     share of the whole-quote reading vs. the average of its parts (only for multi-part quotes) */
++export const TUNE={TEMP:1.3,NEUTRAL_Z:2.5,MIX:.5,WHOLE:.5};
+ 
+-/* Downloads the multilingual model (once; then cached) and embeds every emotion's anchor sentences. */
++/* Everyday, emotionally flat sentences. An emotion's score on these is its "nothing is going on" baseline. */
++const NEUTRAL_REFS=[
++  'The meeting is scheduled for Tuesday at three o\'clock.','Please close the door when you leave the room.','The train to the city leaves every hour.',
++  'Add two cups of flour and stir the mixture.','The report has twelve pages and a short appendix.','The store opens at nine and closes at six.',
++  'Turn left at the second traffic light.','I need to buy milk, bread and eggs.','The file is saved in the documents folder.','The temperature today is around twenty degrees.',
++  'הפגישה נקבעה ליום שלישי בשעה שלוש.','אנא סגרו את הדלת כשאתם יוצאים מהחדר.','הרכבת לעיר יוצאת בכל שעה.','מוסיפים שתי כוסות קמח ומערבבים.',
++  'לדוח יש שתים עשרה עמודים ונספח קצר.','החנות נפתחת בתשע ונסגרת בשש.','ברמזור השני פונים שמאלה.','אני צריך לקנות חלב, לחם וביצים.','הקובץ נשמר בתיקיית המסמכים.','הטמפרטורה היום היא בערך עשרים מעלות.',
++];
++
++const lex=compile(EMOTIONS);
++let embedFn=null,anchorVecs=null,refVecs=null,base=null;
++const cache=new Map();
++export const modelReady=()=>!!(embedFn&&anchorVecs);
++
++/* Embeds texts (plain, de-duplicated, cached). Returns vectors in the same order. */
++async function embed(texts){
++  const ts=texts.map(plain),res=new Map(),need=[];
++  for(const t of new Set(ts))cache.has(t)?res.set(t,cache.get(t)):need.push(t);
++  if(need.length){const vs=await embedFn(need);need.forEach((t,i)=>{res.set(t,vs[i]);cache.set(t,vs[i])});while(cache.size>400)cache.delete(cache.keys().next().value)}
++  return ts.map(t=>res.get(t));
++}
++const dot=(a,b)=>{let d=0;for(let i=0;i<a.length;i++)d+=a[i]*b[i];return d};
++const avg=a=>a.reduce((x,y)=>x+y,0)/a.length;
++
++/* Raw score of a vector for every emotion (same order as IDS). */
++const rawScores=v=>anchorVecs.map(av=>{const s=av.map(a=>dot(a,v));return TUNE.MIX*avg(s)+(1-TUNE.MIX)*Math.max(...s)});
++
++/* Baseline per emotion from the everyday sentences. Some emotions' anchors are simply "closer to everything" than others;
++   subtracting this removes that bias, and gives us a real notion of "no emotion stands out". */
++function calibrate(){
++  const R=refVecs.map(rawScores),mu=IDS.map((_,k)=>avg(R.map(r=>r[k]))),sd=IDS.map((_,k)=>Math.sqrt(avg(R.map(r=>(r[k]-mu[k])**2)))),pool=avg(sd);
++  const b={mu,sd:sd.map(s=>Math.max(.008,.5*s+.5*pool))};
++  base=[...b.mu,...b.sd].every(Number.isFinite)?b:null;
++}
++export function setTune(patch){const m=TUNE.MIX;Object.assign(TUNE,patch);if(refVecs&&TUNE.MIX!==m)calibrate()}
++
++const softmax=l=>{const mx=Math.max(...l),e=l.map(x=>Math.exp(x-mx)),tot=e.reduce((a,b)=>a+b);return e.map(x=>x/tot)};
++/* Two separate questions: HOW emotional is this (a sigmoid on the strongest calibrated score), and WHICH emotion (a softmax
++   among emotions only). Keeping them apart stops a crowd of weak scores from out-voting a clear "nothing here". */
++function fromVector(v){
++  const r=rawScores(v),pack=(p,s)=>({w:Object.fromEntries(IDS.map((id,k)=>[id,s*p[k]])),n:1-s});
++  if(!base){const mx=Math.max(...r);return pack(softmax(r.map(x=>(x-mx)*60)),1)}              // calibration unavailable: plain scoring
++  const z=r.map((x,k)=>Math.max(-3,Math.min(8,(x-base.mu[k])/base.sd[k])));
++  return pack(softmax(z.map(x=>TUNE.TEMP*x)),1/(1+Math.exp(-TUNE.TEMP*(Math.max(...z)-TUNE.NEUTRAL_Z))));
++}
++/* Keyword fallback: each hit is evidence; with no hits the quote is neutral. */
++function fromKeywords(text){
++  const h=lex(text),den=IDS.reduce((a,id)=>a+h[id],0)+.8;
++  return {w:Object.fromEntries(IDS.map(id=>[id,h[id]/den])),n:.8/den};
++}
++
++async function prepare(){
++  const phrases=EMOTIONS.flatMap(e=>[...e.anchors.en,...e.anchors.he].map(text=>({id:e.id,text})));
++  const vecs=await embed([...phrases.map(p=>p.text),...NEUTRAL_REFS]);
++  anchorVecs=IDS.map(id=>phrases.flatMap((p,i)=>p.id===id?[vecs[i]]:[]));
++  refVecs=vecs.slice(phrases.length);
++  calibrate();
++}
++
++/* Downloads the multilingual model (once; then cached) and prepares the anchors. */
+ export async function loadModel(onStatus){
+   try{
+     const {pipeline,env}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
+     env.allowLocalModels=false;
+-    ext=await pipeline('feature-extraction','Xenova/multilingual-e5-small',{dtype:'q8',
++    const ext=await pipeline('feature-extraction','Xenova/multilingual-e5-small',{dtype:'q8',
+       progress_callback:p=>{if(p.status==='progress')onStatus('dl',Math.round(p.progress))}});
+-    const phrases=EMOTIONS.flatMap(e=>[...e.anchors.en,...e.anchors.he].map(text=>({id:e.id,text})));
+-    const vecs=await embed(phrases.map(p=>p.text));
+-    anchors=phrases.map((p,i)=>({id:p.id,x:vecs[i]}));
++    embedFn=async texts=>(await ext(texts.map(t=>'query: '+t),{pooling:'mean',normalize:true})).tolist();
++    await prepare();
+     onStatus('ready');return true;
+-  }catch(err){console.warn(err);onStatus('off');return false}
++  }catch(err){console.warn(err);embedFn=anchorVecs=null;onStatus('off');return false}
+ }
++/* Plug in any embedding function (texts => normalized vectors). Used by the tests; also lets you try another model. */
++export async function useEmbedder(fn){cache.clear();embedFn=fn;await prepare()}
++
++const top=w=>IDS.reduce((a,b)=>w[b]>w[a]?b:a);
++const r3=x=>Math.round(x*1000)/1000;
++const read=async parts=>modelReady()?(await embed(parts)).map(fromVector):parts.map(fromKeywords);
+ 
+-/* Returns {emotionId: weight}, weights sum to 1. */
+-export async function analyze(text){
+-  if(ext&&anchors){
+-    const [v]=await embed([text]),sum={},n={};
+-    for(const a of anchors){let d=0;for(let i=0;i<v.length;i++)d+=v[i]*a.x[i];sum[a.id]=(sum[a.id]||0)+d;n[a.id]=(n[a.id]||0)+1}
+-    const raw=IDS.map(id=>sum[id]/n[id]),mx=Math.max(...raw),e=raw.map(x=>Math.exp((x-mx)*SHARPNESS)),tot=e.reduce((a,b)=>a+b);
+-    return Object.fromEntries(IDS.map((id,i)=>[id,e[i]/tot]));
+-  }
+-  const low=text.toLowerCase(),h=EMOTIONS.map(e=>e.keywords.reduce((a,k)=>a+(low.includes(k)?1:0),0)+.3),tot=h.reduce((a,b)=>a+b);
+-  return Object.fromEntries(EMOTIONS.map((e,i)=>[e.id,h[i]/tot]));
++/* Returns {w:{emotionId:weight}, n:neutralWeight, arc}. Weights and n sum to 1.
++   arc is null for single-mood quotes; otherwise [[emotionId|'neutral', strength], ...] for each part of the quote,
++   in reading order, whenever the dominant mood changes somewhere along the way. */
++export async function analyzeFull(text){
++  const segs=segment(text),parts=segs.length>1?[text,...segs]:[text],res=await read(parts),whole=res[0];
++  if(parts.length===1)return {w:whole.w,n:whole.n,arc:null};
++  const parts_=res.slice(1),wc=segs.map(s=>Math.max(1,wordCount(s))),tot=wc.reduce((a,b)=>a+b),W=TUNE.WHOLE;
++  const mixv=f=>W*f(whole)+(1-W)*parts_.reduce((a,r,i)=>a+f(r)*wc[i]/tot,0);
++  const w=Object.fromEntries(IDS.map(id=>[id,mixv(r=>r.w[id])])),n=mixv(r=>r.n);
++  const arc=parts_.map(r=>{const t=top(r.w);return r.n>r.w[t]?['neutral',r3(r.n)]:[t,r3(r.w[t])]});
++  const moves=arc.some((a,i)=>i&&a[0]!==arc[i-1][0]);
++  return {w,n,arc:moves?arc:null};
+ }
++/* Back-compat: just the {emotionId: weight} map. */
++export const analyze=async text=>(await analyzeFull(text)).w;
+diff --git a/js/emotions/anger.js b/js/emotions/anger.js
+index b1dfdd9..cab62cf 100644
+--- a/js/emotions/anger.js
++++ b/js/emotions/anger.js
+@@ -10,7 +10,7 @@ export default {
+     en: ['rage, injustice and fury', 'bitter resentment and hatred', 'fight and rebellion'],
+     he: ['זעם, עוול וכעס', 'טינה ושנאה', 'מאבק ומרד'],
+   },
+-  keywords: ['anger', 'rage', 'hate', 'fight', 'war', 'כעס', 'זעם', 'שנא', 'מלחמ'],   // fallback matching if the AI model is unavailable
++  keywords: ['anger', 'angry', 'rage', 'fury', 'hate', 'hatred', 'fight', 'war', 'injustice', 'כעס', 'זעם', 'שנא', 'שנאה', 'מלחמ', 'עוול', 'מרד'],   // fallback matching if the AI model is unavailable
+   style: {f:'heavy', w:800, sz:1.08, al:'s', pos:0.5, col:'#fff2ec', ac:'#ff8a6b', fx:'hard', gc:'#d00000', ls:1, up:1, lh:1.15, nq:1},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/courage.js b/js/emotions/courage.js
+index e625d93..3fe86cd 100644
+--- a/js/emotions/courage.js
++++ b/js/emotions/courage.js
+@@ -10,7 +10,7 @@ export default {
+     en: ['courage, strength and determination', 'never give up, discipline and hard work', 'overcoming obstacles and standing tall'],
+     he: ['אומץ, כוח ונחישות', 'לא לוותר, משמעת ועבודה קשה', 'להתגבר על מכשולים ולעמוד איתן'],
+   },
+-  keywords: ['courage', 'brave', 'strong', 'never give up', 'strength', 'אומץ', 'חזק', 'נחישות', 'כוח'],   // fallback matching if the AI model is unavailable
++  keywords: ['courage', 'brave', 'bravery', 'strong', 'strength', 'determin*', 'never give up', 'don\'t give up', 'persever*', 'אומץ', 'חזק', 'נחישות', 'כוח', 'התמדה', 'לא לוותר'],   // fallback matching if the AI model is unavailable
+   style: {f:'serif', w:800, sz:1.02, al:'s', pos:0.42, col:'#fff4e6', ac:'#ffb45a', fx:'hard', gc:'#a63d00', ls:1, up:1, lh:1.2, nq:1},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/freedom.js b/js/emotions/freedom.js
+index ce1e791..092c515 100644
+--- a/js/emotions/freedom.js
++++ b/js/emotions/freedom.js
+@@ -10,7 +10,7 @@ export default {
+     en: ['freedom, independence and open sky', 'adventure, travel and wandering free', 'breaking free and being yourself'],
+     he: ['חירות, עצמאות ושמיים פתוחים', 'הרפתקה, טיול וחופש', 'להשתחרר ולהיות עצמך'],
+   },
+-  keywords: ['free', 'wander', 'sky', 'journey', 'adventure', 'חופש', 'חירות', 'דרך', 'מסע'],   // fallback matching if the AI model is unavailable
++  keywords: ['free', 'freedom', 'liberty', 'wander', 'sky', 'horizon', 'journey', 'adventure', 'travel', 'wild', 'חופש', 'חירות', 'מסע', 'הרפתק', 'לנדוד', 'אופק'],   // fallback matching if the AI model is unavailable
+   style: {f:'geo', w:400, sz:1, al:'c', pos:0.4, col:'#ffffff', ac:'#e0f2ff', fx:'soft', ls:1, lh:1.4},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/gratitude.js b/js/emotions/gratitude.js
+index a322517..2c4a6e1 100644
+--- a/js/emotions/gratitude.js
++++ b/js/emotions/gratitude.js
+@@ -1,7 +1,8 @@
+ import {rgba} from '../util.js';
+ 
++/* GRATITUDE - everything about this emotion lives in this file (see README.md, "Adding an emotion"). */
+ export default {
+-  id: 'gratitude',                              // unique, lowercase
++  id: 'gratitude',
+   names: {en:'Gratitude', he:'הכרת תודה'},      // shown on the mood chips
+   light: false,                                 // true = bright background + dark text
+   palette: ['#f4a261', '#e9c46a', '#2a9d8f'],   // 3 colors for the background blobs
+@@ -9,12 +10,17 @@ export default {
+     en: ['gratitude and thankfulness', 'appreciating what we have', 'a heartfelt thank you'],
+     he: ['הכרת תודה ותודה מעומק הלב', 'להעריך את מה שיש לנו', 'תודה רבה מכל הלב'],
+   },
+-  keywords: ['thank', 'grateful', 'תודה'],      // used only if the AI can't load
++  keywords: ['thank*', 'grateful', 'gratitude', 'appreciat*', 'blessed', 'indebted', 'הכרת תודה', 'תודה', 'מודה', 'מודים', 'הכרת'],   // used only if the AI can't load
+   style: {f:'serif', w:500, sz:1, al:'c', pos:.5, col:'#fff8ea', ac:'#f4d58d', fx:'glow', gc:'#e9c46a'},
+-  motif(g, {W, H, R, pick, strength}) {         // the decoration
+-    for (let i = 0; i < 14; i++) {
+-      g.beginPath(); g.arc(R()*W, R()*H, 40 + R()*120, 0, 6.283);
+-      g.fillStyle = rgba(pick(), .12 * strength); g.fill();
++  // Ripples of thanks spreading up from the bottom edge, and a few drifting petals kept out of the middle.
++  motif(g,{W,H,R,pick,strength}){
++    const m=strength,cx=W*(.35+.3*R()),cy=H*.97;
++    g.lineWidth=2.5;
++    for(let i=0;i<6;i++){g.beginPath();g.arc(cx,cy,230+i*150+R()*30,Math.PI,2*Math.PI);g.strokeStyle=rgba('#ffe3a3',(.2-i*.025)*m);g.stroke()}
++    for(let i=0;i<26;i++){
++      const x=R()*W,y=R()*H,a=R()*6.283,rx=10+R()*16,ry=4+R()*6,c=pick(),al=(.25+R()*.3)*m;
++      if(Math.abs(x-W/2)<W*.3&&Math.abs(y-H*.5)<H*.2)continue;
++      g.save();g.translate(x,y);g.rotate(a);g.beginPath();g.ellipse(0,0,rx,ry,0,0,6.283);g.fillStyle=rgba(c,al);g.fill();g.restore();
+     }
+   },
+ };
+diff --git a/js/emotions/hope.js b/js/emotions/hope.js
+index 277beb7..044d869 100644
+--- a/js/emotions/hope.js
++++ b/js/emotions/hope.js
+@@ -7,10 +7,10 @@ export default {
+   light: true,                       // true = bright background + dark text
+   palette: ['#ff9e80', '#ffd166', '#c77dff'],   // colors for the background blobs
+   anchors: {                       // sentences the AI compares each quote against
+-    en: ['hope, a new beginning and dawn', 'courage, perseverance and growth', 'believing in a better future'],
+-    he: ['תקווה, התחלה חדשה וזריחה', 'אומץ, התמדה וצמיחה', 'אמונה בעתיד טוב יותר'],
++    en: ['hope, a new beginning and dawn', 'trust that things will get better, a seed beginning to grow', 'believing in a better future'],
++    he: ['תקווה, התחלה חדשה וזריחה', 'אמונה שהדברים ישתפרו, זרע שמתחיל לצמוח', 'אמונה בעתיד טוב יותר'],
+   },
+-  keywords: ['hope', 'dream', 'begin', 'dawn', 'future', 'תקוו', 'חלום', 'התחל', 'עתיד'],   // fallback matching if the AI model is unavailable
++  keywords: ['hope', 'hopeful', 'dream', 'begin', 'beginning', 'dawn', 'sunrise', 'tomorrow', 'future', 'תקוו', 'חלום', 'התחל', 'זריח', 'עתיד', 'מחר'],   // fallback matching if the AI model is unavailable
+   style: {f:'serif', w:500, sz:1.02, al:'c', pos:0.42, col:'#fff8e6', ac:'#ffd08a', fx:'glow', gc:'#ffb36b'},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/humor.js b/js/emotions/humor.js
+index d65c43d..fe04240 100644
+--- a/js/emotions/humor.js
++++ b/js/emotions/humor.js
+@@ -10,7 +10,7 @@ export default {
+     en: ['funny, witty and humorous joke', 'sarcasm, irony and playful teasing', 'silly, absurd and lighthearted fun'],
+     he: ['מצחיק, שנון ובדיחה', 'סרקזם, אירוניה ושובבות', 'מטופש, אבסורדי וקליל'],
+   },
+-  keywords: ['funny', 'joke', 'laugh', 'silly', 'irony', 'מצחיק', 'בדיח', 'אירוני'],   // fallback matching if the AI model is unavailable
++  keywords: ['funny', 'joke', 'jokes', 'silly', 'irony', 'מצחיק', 'בדיח', 'אירוני'],   // fallback matching if the AI model is unavailable
+   style: {f:'sans', w:700, sz:1, al:'c', pos:0.5, col:'#ffffff', ac:'#ffe7f0', fx:'hard', gc:'#8338ec', rot:-0.03, lh:1.25},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/index.js b/js/emotions/index.js
+index 1b4e906..19cb4d4 100644
+--- a/js/emotions/index.js
++++ b/js/emotions/index.js
+@@ -11,9 +11,10 @@ import courage from './courage.js';
+ import humor from './humor.js';
+ import freedom from './freedom.js';
+ import reverence from './reverence.js';
++import gratitude from './gratitude.js';
+ 
+ // Registry. Order = drawing order of the motifs (later ones paint on top). To add an emotion: import it and add it here.
+-export const EMOTIONS=[joy, calm, sadness, anger, hope, wonder, love, dread, nostalgia, courage, humor, freedom, reverence];
++export const EMOTIONS=[joy, calm, sadness, anger, hope, wonder, love, dread, nostalgia, courage, humor, freedom, reverence, gratitude];
+ export const IDS=EMOTIONS.map(e=>e.id);
+ export const BY=Object.fromEntries(EMOTIONS.map(e=>[e.id,e]));
+ export const neutral=()=>Object.fromEntries(IDS.map(id=>[id,1/IDS.length]));
+diff --git a/js/emotions/joy.js b/js/emotions/joy.js
+index d7b38da..d0f588f 100644
+--- a/js/emotions/joy.js
++++ b/js/emotions/joy.js
+@@ -7,10 +7,10 @@ export default {
+   light: true,                       // true = bright background + dark text
+   palette: ['#ffb703', '#fb8500', '#ff5d8f'],   // colors for the background blobs
+   anchors: {                       // sentences the AI compares each quote against
+-    en: ['joy, delight and laughter', 'this is wonderful, I am so happy', 'celebration and gratitude'],
+-    he: ['שמחה, הנאה וצחוק', 'זה נפלא, אני כל כך מאושר', 'חגיגה והודיה'],
++    en: ['joy, delight and laughter', 'this is wonderful, I am so happy', 'a happy celebration and good news'],
++    he: ['שמחה, הנאה וצחוק', 'זה נפלא, אני כל כך מאושר', 'חגיגה וחדשות טובות'],
+   },
+-  keywords: ['joy', 'happy', 'laugh', 'smile', 'שמח', 'צחוק', 'חיוך', 'אושר'],   // fallback matching if the AI model is unavailable
++  keywords: ['joy', 'happy', 'happiness', 'delight', 'laugh', 'smile', 'cheer*', 'שמח', 'צחוק', 'חיוך', 'אושר'],   // fallback matching if the AI model is unavailable
+   style: {f:'sans', w:700, sz:1.04, al:'c', pos:0.5, col:'#fffbe8', ac:'#ffd166', fx:'glow', gc:'#ffb703'},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/love.js b/js/emotions/love.js
+index 3967f1f..e74dd8e 100644
+--- a/js/emotions/love.js
++++ b/js/emotions/love.js
+@@ -10,7 +10,7 @@ export default {
+     en: ['love, tenderness and affection', 'longing and devotion', 'friendship and warmth'],
+     he: ['אהבה, רוך וחיבה', 'כמיהה ומסירות', 'ידידות וחום'],
+   },
+-  keywords: ['love', 'heart', 'friend', 'soul', 'אהב', 'לב ', 'חבר', 'נשמה'],   // fallback matching if the AI model is unavailable
++  keywords: ['love', 'beloved', 'heart', 'friend', 'friendship', 'tender*', 'affection', 'soul', 'אהב', 'לב', 'חבר', 'נשמה', 'חיבה', 'רוך'],   // fallback matching if the AI model is unavailable
+   style: {f:'script', w:400, i:1, sz:1.08, al:'c', pos:0.5, col:'#fff2f5', ac:'#ffb3c1', fx:'glow', gc:'#ff4d6d', fr:'round', lh:1.4},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/nostalgia.js b/js/emotions/nostalgia.js
+index 7cdf31f..d2c2785 100644
+--- a/js/emotions/nostalgia.js
++++ b/js/emotions/nostalgia.js
+@@ -10,7 +10,7 @@ export default {
+     en: ['nostalgia, memories of childhood and the good old days', 'longing for the past and the passing of time', 'old photographs, yesterday and remembering'],
+     he: ['נוסטלגיה, זיכרונות ילדות וימים עברו', 'געגוע לעבר וחלוף הזמן', 'תמונות ישנות, אתמול והזיכרון'],
+   },
+-  keywords: ['memor', 'remember', 'yesterday', 'childhood', 'past', 'זכר', 'ילדות', 'געגוע', 'פעם'],   // fallback matching if the AI model is unavailable
++  keywords: ['memor*', 'remember', 'yesterday', 'childhood', 'nostalgi*', 'old days', 'the past', 'זכר', 'זיכרונ', 'ילדות', 'געגוע', 'נוסטלג', 'ימים עברו'],   // fallback matching if the AI model is unavailable
+   style: {f:'serif', w:400, i:1, sz:0.98, al:'c', pos:0.5, col:'#fdf1d8', ac:'#e8c48a', fx:'soft', lh:1.4},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/reverence.js b/js/emotions/reverence.js
+index 8fcc954..9813504 100644
+--- a/js/emotions/reverence.js
++++ b/js/emotions/reverence.js
+@@ -7,10 +7,10 @@ export default {
+   light: false,                       // true = bright background + dark text
+   palette: ['#3a2a6b', '#c9a227', '#1b1035'],   // colors for the background blobs
+   anchors: {                       // sentences the AI compares each quote against
+-    en: ['faith, prayer and reverence for God', 'holiness, spirituality and sacred tradition', 'gratitude, humility and blessing'],
+-    he: ['אמונה, תפילה ויראת שמיים', 'קדושה, רוחניות ומסורת', 'הודיה, ענווה וברכה'],
++    en: ['faith, prayer and reverence for God', 'holiness, spirituality and sacred tradition', 'humility, blessing and awe before the divine'],
++    he: ['אמונה, תפילה ויראת שמיים', 'קדושה, רוחניות ומסורת', 'ענווה, ברכה ויראה מפני הבורא'],
+   },
+-  keywords: ['god', 'faith', 'prayer', 'holy', 'bless', 'אלוה', 'אמונה', 'תפיל', 'קדוש', 'ברכ'],   // fallback matching if the AI model is unavailable
++  keywords: ['god', 'faith', 'prayer', 'pray', 'holy', 'sacred', 'divine', 'bless', 'blessing', 'אלוה', 'אלהים', 'אמונה', 'תפיל', 'קדוש', 'קדש', 'ברכ', 'בורא', 'שמים'],   // fallback matching if the AI model is unavailable
+   style: {f:'serif', w:500, sz:0.98, al:'c', pos:0.5, col:'#fff6dc', ac:'#e6c65c', fx:'glow', gc:'#c9a227', fr:'thin', lh:1.4},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/sadness.js b/js/emotions/sadness.js
+index b88c297..9039303 100644
+--- a/js/emotions/sadness.js
++++ b/js/emotions/sadness.js
+@@ -8,9 +8,9 @@ export default {
+   palette: ['#3a0ca3', '#4361ee', '#1d3557'],   // colors for the background blobs
+   anchors: {                       // sentences the AI compares each quote against
+     en: ['sorrow, grief and loss', 'loneliness and tears', 'heartbreak and regret'],
+-    he: ['עצב, אבל וגעגוע', 'בדידות ודמעות', 'שבירת לב וחרטה'],
++    he: ['עצב, אבל ואובדן', 'בדידות ודמעות', 'שבירת לב וחרטה'],
+   },
+-  keywords: ['sad', 'grief', 'tear', 'lonely', 'loss', 'עצב', 'דמע', 'בדיד', 'אבל'],   // fallback matching if the AI model is unavailable
++  keywords: ['sad', 'sadness', 'sorrow', 'grief', 'grieve', 'tear', 'tears', 'lonely', 'loneliness', 'loss', 'mourn*', 'עצב', 'דמע', 'בדיד', 'אבלות', 'שכול', 'כאב', 'בוכ'],   // fallback matching if the AI model is unavailable
+   style: {f:'serif', w:400, i:1, sz:0.92, al:'s', pos:0.62, col:'#e3e9f7', ac:'#9db4e8', fx:'soft', lh:1.4},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/emotions/wonder.js b/js/emotions/wonder.js
+index ee32424..7f9be29 100644
+--- a/js/emotions/wonder.js
++++ b/js/emotions/wonder.js
+@@ -10,7 +10,7 @@ export default {
+     en: ['awe, mystery and the universe', 'wisdom, curiosity and deep thought', 'stars and imagination'],
+     he: ['יראת כבוד, תעלומה והיקום', 'חוכמה, סקרנות ומחשבה עמוקה', 'כוכבים ודמיון'],
+   },
+-  keywords: ['star', 'universe', 'mystery', 'wisdom', 'think', 'כוכב', 'יקום', 'חוכמ', 'סוד'],   // fallback matching if the AI model is unavailable
++  keywords: ['star', 'universe', 'cosmos', 'galaxy', 'mystery', 'wisdom', 'wonder', 'awe', 'curious', 'כוכב', 'יקום', 'חוכמ', 'תעלומ', 'פליאה', 'סקרנ'],   // fallback matching if the AI model is unavailable
+   style: {f:'geo', w:400, sz:0.95, al:'c', pos:0.5, col:'#f3eeff', ac:'#9ee6ff', fx:'glow', gc:'#4cc9f0', ls:3, fr:'thin'},
+   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
+   motif(g,{W,H,R,pick,strength}){
+diff --git a/js/eval-set.js b/js/eval-set.js
+new file mode 100644
+index 0000000..be565dc
+--- /dev/null
++++ b/js/eval-set.js
+@@ -0,0 +1,34 @@
++/* Labelled sentences for eval.html. [expected emotion id or 'neutral', language, text]. Written for this test (not famous quotes),
++   short and unambiguous on purpose: add your own hard cases. */
++export const SET=[
++ ['joy','en','What a wonderful day, I could laugh out loud with delight!'],['joy','en','We danced and laughed all night; I have never been so happy.'],
++ ['joy','he','איזה יום נפלא, אני צוחק מרוב שמחה!'],['joy','he','רקדנו וצחקנו כל הלילה, מעולם לא הייתי מאושר כל כך.'],
++ ['calm','en','Sit quietly by the water and let the stillness settle over you.'],['calm','en','There is nothing to chase; breathe, and be at peace.'],
++ ['calm','he','שבו בשקט ליד המים ותנו לרוגע להשתלט עליכם.'],['calm','he','אין לאן למהר, נשימה אחת של שלווה מספיקה.'],
++ ['sadness','en','She cried alone for hours after the funeral, the house so empty now.'],['sadness','en','My heart is broken and nothing will bring him back.'],
++ ['sadness','he','היא בכתה לבדה שעות אחרי ההלוויה, והבית ריק כל כך.'],['sadness','he','הלב שבור ושום דבר לא יחזיר אותו אליי.'],
++ ['anger','en','I am furious at this injustice, and I will not stay silent!'],['anger','en','Hatred burned in him; he wanted to fight everyone.'],
++ ['anger','he','אני זועם על העוול הזה ולא אשתוק!'],['anger','he','שנאה בערה בו, הוא רצה להילחם בכולם.'],
++ ['hope','en','Tomorrow the sun will rise and things will begin to get better.'],['hope','en','Even now a small seed of a brighter future is starting to grow.'],
++ ['hope','he','מחר תזרח השמש והדברים יתחילו להשתפר.'],['hope','he','גם עכשיו צומח זרע קטן של עתיד טוב יותר.'],
++ ['wonder','en','Under the endless stars the universe feels like a deep and beautiful mystery.'],['wonder','en','How can the cosmos be so vast? The more I learn, the more I wonder.'],
++ ['wonder','he','מתחת לכוכבים האינסופיים היקום נראה כתעלומה עמוקה ויפה.'],['wonder','he','איך היקום יכול להיות כל כך עצום? ככל שאני לומד, אני מתפעל יותר.'],
++ ['love','en','I love you with all my heart, and every day I want to stay beside you.'],['love','en','A true friend is a warm place for the soul.'],
++ ['love','he','אני אוהב אותך בכל לבי ורוצה להישאר לצדך בכל יום.'],['love','he','חבר אמיתי הוא מקום חם לנשמה.'],
++ ['dread','en','Something terrible waits in the dark, and I am afraid to move.'],['dread','en','Fear hollowed him out until only emptiness and despair were left.'],
++ ['dread','he','משהו נורא מחכה בחושך ואני מפחד לזוז.'],['dread','he','הפחד רוקן אותו עד שנשארו רק ריקנות וייאוש.'],
++ ['nostalgia','en','I remember the summers of my childhood, those good old days long gone.'],['nostalgia','en','Looking at old photographs, I miss the way things used to be.'],
++ ['nostalgia','he','אני זוכר את קיצי הילדות, הימים הטובים ההם שחלפו.'],['nostalgia','he','מביט בתמונות ישנות ומתגעגע לימים שהיו.'],
++ ['courage','en','Stand tall, never give up, and keep pushing through every obstacle.'],['courage','en','It takes strength and discipline to keep going when it is hard.'],
++ ['courage','he','עמדו איתן, אל תוותרו, והמשיכו להתגבר על כל מכשול.'],['courage','he','צריך כוח ונחישות כדי להמשיך כשקשה.'],
++ ['humor','en','I told my boss I was a perfectionist; he said that was a funny joke.'],['humor','en','Sarcasm is just my way of being lighthearted about silly things.'],
++ ['humor','he','אמרתי למנהל שאני פרפקציוניסט, והוא אמר שזו בדיחה מצחיקה.'],['humor','he','סרקזם זה פשוט הדרך שלי להיות קליל לגבי דברים מטופשים.'],
++ ['freedom','en','Open sky, an open road, and nobody to tell me where to go.'],['freedom','en','I broke free at last and became entirely myself.'],
++ ['freedom','he','שמיים פתוחים, דרך פתוחה, ואף אחד שיגיד לי לאן ללכת.'],['freedom','he','סוף סוף השתחררתי והפכתי להיות עצמי לגמרי.'],
++ ['reverence','en','We bow in prayer before the Holy One, humble before the divine.'],['reverence','en','Faith is a sacred inheritance, handed down in reverence.'],
++ ['reverence','he','אנו משתחווים בתפילה לפני הקדוש ברוך הוא, בענווה ובאמונה.'],['reverence','he','האמונה היא ירושה קדושה שעוברת מדור לדור ביראת שמיים.'],
++ ['gratitude','en','Thank you for everything you have given me; I am deeply grateful.'],['gratitude','en','I appreciate what I have, and I am thankful for each small gift.'],
++ ['gratitude','he','תודה על כל מה שנתת לי, אני אסיר תודה מעומק הלב.'],['gratitude','he','אני מעריך את מה שיש לי ומודה על כל מתנה קטנה.'],
++ ['neutral','en','The package should arrive by Thursday afternoon.'],['neutral','en','Press the green button twice to restart the device.'],['neutral','en','The library is on the second floor, next to the stairs.'],
++ ['neutral','he','החבילה אמורה להגיע עד יום חמישי אחר הצהריים.'],['neutral','he','לחצו פעמיים על הכפתור הירוק כדי להפעיל מחדש את המכשיר.'],['neutral','he','הספרייה נמצאת בקומה השנייה, ליד המדרגות.'],
++];
+diff --git a/js/eval.js b/js/eval.js
+new file mode 100644
+index 0000000..96ac8b5
+--- /dev/null
++++ b/js/eval.js
+@@ -0,0 +1,29 @@
++import {SET} from './eval-set.js';
++import {IDS} from './emotions/index.js';
++import {loadModel,analyzeFull,modelReady,setTune,TUNE} from './analyze.js';
++const $=s=>document.querySelector(s);
++const top=r=>{const t=IDS.reduce((a,b)=>r.w[b]>r.w[a]?b:a);return r.n>r.w[t]?'neutral':t};
++const top3=r=>[...IDS.map(k=>[k,r.w[k]]),['neutral',r.n]].sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
++
++/* Controls re-score from cached embeddings, so sliding them is instant. */
++const KNOBS=[['TEMP',.5,3,.05],['NEUTRAL_Z',0,6,.1],['MIX',0,1,.05],['WHOLE',0,1,.05]];
++$('#knobs').replaceChildren(...KNOBS.map(([k,lo,hi,st])=>{
++  const l=document.createElement('label'),i=document.createElement('input'),o=document.createElement('output');
++  i.type='range';i.min=lo;i.max=hi;i.step=st;i.value=TUNE[k];o.textContent=TUNE[k];
++  i.oninput=()=>{o.textContent=i.value;setTune({[k]:+i.value});run()};l.append(k+' ',i,' ',o);return l}));
++
++async function run(){
++  const rows=[];
++  for(const [want,lang,text] of SET){const r=await analyzeFull(text);rows.push({want,lang,text,got:top(r),t3:top3(r),n:r.n})}
++  const acc=f=>{const s=rows.filter(f);return s.length?s.filter(r=>r.got===r.want).length/s.length:0};
++  const acc3=f=>{const s=rows.filter(f);return s.length?s.filter(r=>r.t3.includes(r.want)).length/s.length:0};
++  const pc=x=>(x*100).toFixed(0)+'%';
++  $('#sum').textContent=`top-1 ${pc(acc(()=>1))} · top-3 ${pc(acc3(()=>1))} · English top-1 ${pc(acc(r=>r.lang==='en'))} · Hebrew top-1 ${pc(acc(r=>r.lang==='he'))} · neutral recall ${pc(acc(r=>r.want==='neutral'))} · emotional text called neutral ${pc(rows.filter(r=>r.want!=='neutral'&&r.got==='neutral').length/rows.filter(r=>r.want!=='neutral').length)}`;
++  const miss=rows.filter(r=>r.got!==r.want);
++  $('#miss').replaceChildren(...miss.map(r=>{const li=document.createElement('li');li.dir='auto';li.textContent=`[${r.lang}] expected ${r.want}, got ${r.got} (top 3: ${r.t3.join(', ')}) — ${r.text}`;return li}));
++}
++$('#st').textContent='Loading model…';
++loadModel((k,n)=>{if(k==='dl')$('#st').textContent=`Downloading model… ${n}%`}).then(ok=>{
++  $('#st').textContent=ok?'Model ready.':'Model unavailable (needs internet once). Nothing to evaluate with keyword fallback only.';
++  if(ok&&modelReady())run();
++});
+diff --git a/js/i18n.js b/js/i18n.js
+index 9f2880e..2c9b141 100644
+--- a/js/i18n.js
++++ b/js/i18n.js
+@@ -3,14 +3,14 @@ const I={
+ en:{title:'Quotebook',tag:'Keep the quotes you love, each with a picture that matches its mood.',howBtn:'How it works',introH:'Welcome! Here’s how it works',
+  s1:'Type or paste a quote, in English or Hebrew.',s2:'Add the book and author if you like. The app reads the mood of your quote on your device, then designs the picture to match: background, font, layout and effects.',s3:'Save it to your collection, or download and share the image.',
+  example:'Try an example',lq:'Quote',phq:'Type or paste a quote…',lb:'Book (optional)',la:'Author (optional)',save:'Save to my collection',png:'Download image',share:'Share image',shuf:'New look',
+- mood:'Detected mood',myq:'My quotes',myqInfo:'Saved only in this browser. Export a backup file to keep them safe or move them to another device.',exp:'Export backup',imp:'Import backup',
++ mood:'Detected mood',neutral:'Neutral',arc:'Mood arc',pin:'Not right? Choose the mood yourself',auto:'Auto-detect',myq:'My quotes',myqInfo:'Saved only in this browser. Export a backup file to keep them safe or move them to another device.',exp:'Export backup',imp:'Import backup',
+  empty:'Nothing saved yet. Your saved quotes will appear here.',open:'Open',del:'Delete',conf:'Delete this quote?',saved:'Saved ✓',updated:'Updated ✓',imported:'Imported ✓',bad:'Could not read that file.',
+  hint:'Type a quote to enable saving and downloading.',ph:'Your quote will appear here.',boot:'Starting…',
+  dl:'Downloading the on-device AI model… {n}% (one time only; afterwards it works offline)',ready:'AI ready. Your quote never leaves your device.',off:'AI model unavailable (internet needed once). Using simple keyword analysis for now.'},
+ he:{title:'ספר ציטוטים',tag:'שמרו ציטוטים אהובים, כל אחד עם תמונה שמתאימה לאווירה שלו.',howBtn:'איך זה עובד',introH:'ברוכים הבאים! ככה זה עובד',
+  s1:'הקלידו או הדביקו ציטוט, בעברית או באנגלית.',s2:'הוסיפו ספר ומחבר אם תרצו. האפליקציה קוראת את האווירה של הציטוט בתוך המכשיר שלכם, ומעצבת תמונה שמתאימה לו: רקע, גופן, פריסה ואפקטים.',s3:'שמרו באוסף שלכם, או הורידו ושתפו את התמונה.',
+  example:'נסו דוגמה',lq:'ציטוט',phq:'הקלידו או הדביקו ציטוט…',lb:'ספר (לא חובה)',la:'מחבר (לא חובה)',save:'שמור באוסף',png:'הורד תמונה',share:'שתף תמונה',shuf:'עיצוב חדש',
+- mood:'האווירה שזוהתה',myq:'הציטוטים שלי',myqInfo:'נשמרים רק בדפדפן הזה. ייצאו קובץ גיבוי כדי לשמור עליהם או להעביר אותם למכשיר אחר.',exp:'ייצוא גיבוי',imp:'ייבוא גיבוי',
++ mood:'האווירה שזוהתה',neutral:'ניטרלי',arc:'מסלול האווירה',pin:'לא מדויק? בחרו אווירה בעצמכם',auto:'זיהוי אוטומטי',myq:'הציטוטים שלי',myqInfo:'נשמרים רק בדפדפן הזה. ייצאו קובץ גיבוי כדי לשמור עליהם או להעביר אותם למכשיר אחר.',exp:'ייצוא גיבוי',imp:'ייבוא גיבוי',
+  empty:'עוד לא נשמר כלום. הציטוטים ששמרתם יופיעו כאן.',open:'פתח',del:'מחק',conf:'למחוק את הציטוט הזה?',saved:'נשמר ✓',updated:'עודכן ✓',imported:'יובא ✓',bad:'לא ניתן לקרוא את הקובץ.',
+  hint:'הקלידו ציטוט כדי לאפשר שמירה והורדה.',ph:'הציטוט שלכם יופיע כאן.',boot:'מתחיל…',
+  dl:'מוריד את מודל הבינה המלאכותית למכשיר… {n}% (פעם אחת בלבד; אחר כך זה עובד גם בלי אינטרנט)',ready:'הבינה המלאכותית מוכנה. הציטוט לא יוצא מהמכשיר.',off:'מודל הבינה המלאכותית לא זמין (נדרש אינטרנט פעם אחת). כרגע נעשה שימוש בניתוח מילות מפתח פשוט.'}};
+diff --git a/js/lexicon.js b/js/lexicon.js
+new file mode 100644
+index 0000000..520f85a
+--- /dev/null
++++ b/js/lexicon.js
+@@ -0,0 +1,42 @@
++import {plain} from './text.js';
++
++/* Keyword matcher used when the AI model is unavailable. Word-aware: "toward" no longer matches "war", "start" not "star".
++   Keyword syntax (in each emotion's `keywords`):
++     love        English word; also matches love/loves/loved/loving/lovely...
++     memor*      trailing * = any word starting with these letters
++     never give up   a phrase (counts double)
++     שמח         Hebrew stem: matches words starting with it, after an optional ו/ה/ב/כ/ל/מ/ש prefix (stems of 1-2 letters match the bare word or one ה/ב/ל/ו prefix only: הלב yes, שלב "stage" and כלב "dog" no) */
++const INFL=['s','es','ed','d','ing','ly','er','ers'],HEB=/[\u05D0-\u05EA]/,PRE='והבכלמש';
++const esc=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
++function forms(k){
++  const f=new Set([k,...INFL.map(s=>k+s)]);
++  if(k.endsWith('e'))f.add(k.slice(0,-1)+'ing');
++  if(k.endsWith('y')){f.add(k.slice(0,-1)+'ies');f.add(k.slice(0,-1)+'ied')}
++  return f;
++}
++export function compile(emotions){
++  const en=new Map(),stems=[],phrases=[],heWords=[],hePhrases=[],ids=emotions.map(e=>e.id);
++  for(const e of emotions)for(const raw of e.keywords){
++    const k=plain(raw).trim().toLowerCase();if(!k)continue;
++    if(HEB.test(k)){(k.includes(' ')?hePhrases:heWords).push([k,e.id]);continue}
++    if(k.includes(' ')){phrases.push([new RegExp('(?:^|[^\\p{L}])'+esc(k)+'(?![\\p{L}])','u'),e.id]);continue}
++    if(k.endsWith('*')){stems.push([k.slice(0,-1),e.id]);continue}
++    for(const f of forms(k)){if(!en.has(f))en.set(f,[]);en.get(f).push(e.id)}
++  }
++  /* returns {emotionId: number of keyword hits} */
++  return text=>{
++    const t=plain(text).toLowerCase(),hits=Object.fromEntries(ids.map(i=>[i,0]));
++    for(const tk of t.split(/[^\p{L}\p{N}'\u05F3\u05F4]+/u).filter(Boolean)){
++      const got=new Set(en.get(tk)||[]);
++      for(const [s,id] of stems)if(tk.startsWith(s))got.add(id);
++      if(HEB.test(tk)){
++        const c=[tk];if(PRE.includes(tk[0])&&tk.length>3)c.push(tk.slice(1));if(PRE.includes(tk[0])&&PRE.includes(tk[1]||'')&&tk.length>4)c.push(tk.slice(2));
++        for(const [k,id] of heWords)if(k.length<3?(tk===k||(tk.length===k.length+1&&'הבלו'.includes(tk[0])&&tk.slice(1)===k)):c.some(x=>x.startsWith(k)))got.add(id);
++      }
++      got.forEach(id=>hits[id]++);
++    }
++    for(const [re,id] of phrases)if(re.test(t))hits[id]+=2;
++    for(const [k,id] of hePhrases)if(t.includes(k))hits[id]+=2;
++    return hits;
++  };
++}
+diff --git a/js/main.js b/js/main.js
+index 304ae90..9f8f4a5 100644
+--- a/js/main.js
++++ b/js/main.js
+@@ -1,8 +1,8 @@
+ import {$} from './util.js';
+ import {t,state} from './i18n.js';
+-import {IDS,BY,neutral} from './emotions/index.js';
++import {EMOTIONS,IDS,BY,fullWeights} from './emotions/index.js';
+ import {draw} from './render.js';
+-import {loadModel,analyze} from './analyze.js';
++import {loadModel,analyzeFull} from './analyze.js';
+ 
+ const st=$('#st');
+ let stKey='',stN=0;
+@@ -11,26 +11,47 @@ function applyLang(){
+  document.documentElement.lang=state.lang;document.documentElement.dir=state.lang==='he'?'rtl':'ltr';document.title=t('title');
+  document.querySelectorAll('[data-t]').forEach(e=>e.textContent=t(e.dataset.t));
+  document.querySelectorAll('[data-p]').forEach(e=>e.placeholder=t(e.dataset.p));
+- $('#lang').textContent=state.lang==='he'?'English':'עברית';setSt();list();render();
++ $('#lang').textContent=state.lang==='he'?'English':'עברית';
++ $('#pin').replaceChildren(...[['',t('auto')],...EMOTIONS.map(e=>[e.id,e.names[state.lang]])].map(([v,l])=>{const o=document.createElement('option');o.value=v;o.textContent=l;return o}));
++ $('#pin').value=s.pin;setSt();list();render();
+ }
+-const s={text:'',book:'',author:'',w:neutral(),seed:0,id:null};let last='',tm,exi=0;
+-const cv=$('#cv');
++const s={text:'',book:'',author:'',w:{},n:1,arc:null,pin:'',seed:0,id:null};
++const cv=$('#cv'),pct=x=>Math.round(x*100)+'%';
++/* The mood actually drawn: the detected mix, or - if the person chose a mood - that mood on top of it. */
++const eff=o=>{
++ const w=fullWeights(o.w),n=o.n??0;
++ if(!o.pin||!BY[o.pin])return {w,n,arc:o.arc||null};
++ return {w:Object.fromEntries(IDS.map(k=>[k,.3*w[k]+(k===o.pin?.7:0)])),n:.3*n,arc:null};
++};
++const chip=(label,color)=>{const c=document.createElement('span');c.className='chip';c.style.color=c.style.borderColor=color;c.textContent=label;return c};
+ function render(){
+- const e=!s.text.trim();
+- draw(cv,e?{...s,text:t('ph'),book:'',author:''}:s);
+- $('#chips').replaceChildren(...[...IDS].sort((a,b)=>(s.w[b]||0)-(s.w[a]||0)).slice(0,3).map(k=>{const c=document.createElement('span');c.className='chip';c.style.color=c.style.borderColor=BY[k].style.ac;c.textContent=BY[k].names[state.lang]+' '+Math.round((s.w[k]||0)*100)+'%';return c}));
++ const e=!s.text.trim(),v=e?{w:fullWeights({}),n:1,arc:null}:eff(s);
++ draw(cv,{...s,...v,...(e?{text:t('ph'),book:'',author:''}:{})});
++ const rows=[...IDS.map(k=>[BY[k].names[state.lang],v.w[k],BY[k].style.ac]),[t('neutral'),v.n,'#b8c0c8']].filter(r=>r[1]>=.01).sort((a,b)=>b[1]-a[1]).slice(0,3);
++ $('#chips').replaceChildren(...rows.map(r=>chip(r[0]+' '+pct(r[1]),r[2])));
++ const names=(v.arc||[]).map(a=>a[0]==='neutral'?t('neutral'):BY[a[0]].names[state.lang]).filter((x,i,a)=>x!==a[i-1]);
++ $('#arc').hidden=names.length<2;$('#arc').textContent=t('arc')+': '+names.join(state.lang==='he'?' ← ':' → ');
+  ['save','png','share'].forEach(i=>$('#'+i).disabled=e);$('#hint').hidden=!e;$('#moodrow').hidden=e;
+ }
+-async function update(){const x=s.text.trim();if(x&&x!==last){last=x;s.w=await analyze(x)}render()}
++/* Analysis is asynchronous. Each run gets a number; a result is applied only if it is still the newest, so a slow older
++   run can't overwrite a newer one. update() resolves after the CURRENT text has been analysed (Save waits for it). */
++let seq=0,cur={x:'',p:null},tm,exi=0;
++const reset=()=>{seq++;cur={x:'',p:null}};
++function update(){
++ const x=s.text.trim();
++ if(x&&x!==cur.x){cur.x=x;const my=++seq;cur.p=analyzeFull(x).then(r=>{if(my===seq)Object.assign(s,{w:r.w,n:r.n,arc:r.arc})},err=>console.warn(err))}
++ return Promise.resolve(cur.p).then(render);
++}
+ const later=()=>{clearTimeout(tm);tm=setTimeout(update,650)};
+ function toast(m){const e=$('#toast');e.textContent=m;e.classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>e.classList.remove('on'),1800)}
+ $('#q').oninput=e=>{s.text=e.target.value;later()};
+ $('#b').oninput=e=>{s.book=e.target.value;later()};
+ $('#a').oninput=e=>{s.author=e.target.value;later()};
+ $('#shuf').onclick=()=>{s.seed++;render()};
++$('#pin').onchange=e=>{s.pin=e.target.value;render()};
+ const EX={en:[['Not all those who wander are lost.','The Fellowship of the Ring','J.R.R. Tolkien'],['Hope is the thing with feathers that perches in the soul.','Poems (1891)','Emily Dickinson'],['Deep into that darkness peering, long I stood there wondering, fearing.','The Raven','Edgar Allan Poe'],['To every thing there is a season, and a time to every purpose under the heaven.','Ecclesiastes 3:1','King Solomon']],
+  he:[['אם אין אני לי, מי לי? וכשאני לעצמי, מה אני? ואם לא עכשיו, אימתי?','פרקי אבות','הלל הזקן'],['גם כי אלך בגיא צלמות לא אירא רע, כי אתה עמדי.','תהילים כג','דוד המלך'],['לכל זמן ועת לכל חפץ תחת השמים.','קהלת','שלמה המלך']]};
+-$('#ex').onclick=()=>{const l=EX[state.lang][exi++%EX[state.lang].length];Object.assign(s,{text:l[0],book:l[1],author:l[2],id:null,seed:0});$('#q').value=l[0];$('#b').value=l[1];$('#a').value=l[2];update()};
++$('#ex').onclick=()=>{const l=EX[state.lang][exi++%EX[state.lang].length];reset();Object.assign(s,{text:l[0],book:l[1],author:l[2],id:null,seed:0,pin:'',w:{},n:1,arc:null});$('#pin').value='';$('#q').value=l[0];$('#b').value=l[1];$('#a').value=l[2];update()};
+ let off=false;try{off=localStorage.getItem('qb.intro')==='0'}catch(e){}
+ $('#intro').hidden=off;
+ $('#x').onclick=()=>{$('#intro').hidden=true;try{localStorage.setItem('qb.intro','0')}catch(e){}};
+@@ -47,15 +68,18 @@ function list(){
+   const d=document.createElement('div');d.className='item';
+   const q=document.createElement('q');q.textContent=it.text;q.dir='auto';
+   const m=document.createElement('small');m.textContent=[it.author,it.book].filter(Boolean).join(' — ');
++  const mv=eff(it),tk=[...IDS].sort((a,b)=>mv.w[b]-mv.w[a])[0],md=document.createElement('div');md.className='moods';
++  md.append(mv.n>mv.w[tk]||mv.w[tk]<.2?chip(t('neutral'),'#b8c0c8'):chip(BY[tk].names[state.lang],BY[tk].style.ac));
+   const bs=document.createElement('div');bs.className='btns';
+-  const o=document.createElement('button');o.textContent=t('open');o.onclick=()=>{Object.assign(s,{text:it.text,book:it.book,author:it.author,w:it.w,seed:it.seed,id:it.id});last=it.text;$('#q').value=it.text;$('#b').value=it.book;$('#a').value=it.author;render();scrollTo({top:0,behavior:'smooth'})};
++  const o=document.createElement('button');o.textContent=t('open');o.onclick=()=>{reset();Object.assign(s,{text:it.text,book:it.book,author:it.author,w:it.w||{},n:it.n??(it.w?0:1),arc:it.arc||null,pin:it.pin||'',seed:it.seed,id:it.id});cur.x=it.text.trim();$('#pin').value=s.pin;$('#q').value=it.text;$('#b').value=it.book;$('#a').value=it.author;render();scrollTo({top:0,behavior:'smooth'})};
+   const x=document.createElement('button');x.textContent=t('del');x.onclick=()=>{if(!confirm(t('conf')))return;items=items.filter(i=>i.id!==it.id);persist();list()};
+-  bs.append(o,x);d.append(q,m,bs);box.append(d);
++  bs.append(o,x);d.append(q,m,md,bs);box.append(d);
+  });
+ }
++const rnd=o=>Object.fromEntries(Object.entries(o).map(([k,x])=>[k,Math.round(x*1e3)/1e3]));
+ $('#save').onclick=async()=>{
+  if(!s.text.trim())return;await update();
+- const it={id:s.id||Date.now().toString(36),text:s.text.trim(),book:s.book.trim(),author:s.author.trim(),w:s.w,seed:s.seed,saved:new Date().toISOString()};
++ const it={id:s.id||Date.now().toString(36),text:s.text.trim(),book:s.book.trim(),author:s.author.trim(),w:rnd(s.w),n:Math.round((s.n??0)*1e3)/1e3,arc:s.arc,pin:s.pin,seed:s.seed,saved:new Date().toISOString()};
+  const i=items.findIndex(x=>x.id===it.id);i>=0?items[i]=it:items.unshift(it);toast(t(i>=0?'updated':'saved'));s.id=it.id;persist();list();
+ };
+ const fname=()=>'quote-'+(s.author||s.text).trim().slice(0,24).replace(/[^\p{L}\p{N}]+/gu,'-')+'.png';
+@@ -67,6 +91,6 @@ $('#share').onclick=async()=>{await update();const f=new File([await blob()],fna
+  dl(f,f.name)};
+ $('#exp').onclick=()=>dl(new Blob([JSON.stringify({app:'quotebook',version:1,quotes:items},null,2)],{type:'application/json'}),'quotebook.json');
+ $('#imp').onclick=()=>$('#file').click();
+-$('#file').onchange=async e=>{try{const d=JSON.parse(await e.target.files[0].text());(d.quotes||[]).forEach(q=>{if(q&&q.text&&!items.some(i=>i.id===q.id))items.push({id:q.id||Date.now().toString(36)+Math.random().toString(36).slice(2,5),text:q.text,book:q.book||'',author:q.author||'',w:q.w||neutral(),seed:q.seed||0,saved:q.saved||''})});persist();list();toast(t('imported'))}catch(err){alert(t('bad'))}e.target.value=''};
++$('#file').onchange=async e=>{try{const d=JSON.parse(await e.target.files[0].text());(d.quotes||[]).forEach(q=>{if(q&&q.text&&!items.some(i=>i.id===q.id))items.push({id:q.id||Date.now().toString(36)+Math.random().toString(36).slice(2,5),text:q.text,book:q.book||'',author:q.author||'',w:q.w||{},n:q.n??(q.w?0:1),arc:q.arc||null,pin:q.pin||'',seed:q.seed||0,saved:q.saved||''})});persist();list();toast(t('imported'))}catch(err){alert(t('bad'))}e.target.value=''};
+ 
+-applyLang();loadModel(setSt).then(ok=>{if(ok){last='';update()}});
++applyLang();loadModel(setSt).then(ok=>{if(ok){cur.x='';update()}});
+diff --git a/js/render.js b/js/render.js
+index 7e7f078..b0f0e6b 100644
+--- a/js/render.js
++++ b/js/render.js
+@@ -1,11 +1,38 @@
+ import {EMOTIONS,IDS,BY,fullWeights} from './emotions/index.js';
+-import {rgba,dark,rng,wrap} from './util.js';
++import {rgba,dark,mix,rng,wrap} from './util.js';
++import {isRTL} from './text.js';
+ 
+ /* Font stacks (system fonts only, so the app stays offline-friendly). Used by each emotion's style.f */
+ const F={serif:'Georgia,"Times New Roman","Noto Serif Hebrew","David",serif',sans:'"Trebuchet MS","Segoe UI","Helvetica Neue",Arial,sans-serif',heavy:'Impact,"Arial Black",Arial,sans-serif',script:'"Snell Roundhand","Segoe Script","Brush Script MT",Georgia,serif',mono:'"Courier New",Courier,monospace',geo:'"Century Gothic",Futura,"Avenir Next","Segoe UI",Arial,sans-serif'};
+ 
+-/* Look used when no single emotion clearly dominates */
++/* Look used when no emotion stands out: its own muted palette (it used to borrow the first emotions' colors) */
+ const NEUTRAL={f:'serif', w:400, sz:1, al:'c', pos:0.5, col:'#fffaf0', ac:'#f1e3c0', fx:'soft'};
++const NEUTRAL_PALETTE=['#6f7f8f','#a9a095','#4c5866'];
++const pc=(id,i)=>id==='neutral'?NEUTRAL_PALETTE[i]:BY[id].palette[i];
++
++/* Text style = the strongest emotion's style, bent toward the runner-up by its share (numbers and colors blend;
++   font, effect and alignment stay with the strongest). A runner-up with a frame lends it once it is strong enough. */
++const DEF={sz:1,pos:.5,lh:1.3,ls:0,rot:0};
++function blend(w,ord){
++ const A=BY[ord[0]],B=BY[ord[1]],wa=w[A.id],wb=w[B.id],S={...A.style};
++ if(wb<.15)return S;
++ const t=Math.min(.4,.8*wb/(wa+wb)),M=(a,b)=>a+(b-a)*t;
++ for(const k in DEF)S[k]=M(A.style[k]??DEF[k],B.style[k]??DEF[k]);
++ S.w=Math.round(M(A.style.w,B.style.w)/100)*100;
++ for(const k of ['col','ac'])S[k]=mix(A.style[k],B.style[k],t);
++ if(A.style.gc&&B.style.gc)S.gc=mix(A.style.gc,B.style.gc,t);
++ if(!S.fr&&B.style.fr&&wb>=.25)S.fr=B.style.fr;
++ return S;
++}
++
++/* Mood ribbon: one dot per part of the quote, joined by a gradient, in reading direction. Only drawn when the mood changes. */
++function ribbon(g,arc,W,H,rtl){
++ const x0=120,x1=W-120,y=H-92,N=arc.length,col=id=>id==='neutral'?NEUTRAL.ac:BY[id].style.ac,X=i=>{const p=(i+.5)/N;return x0+(x1-x0)*(rtl?1-p:p)};
++ const gr=g.createLinearGradient(x0,0,x1,0);arc.forEach(([id],i)=>{const p=(i+.5)/N;gr.addColorStop(rtl?1-p:p,col(id))});
++ g.save();g.globalAlpha=.8;g.fillStyle=gr;g.fillRect(x0,y-3,x1-x0,6);
++ arc.forEach(([id,v],i)=>{g.globalAlpha=.95;g.beginPath();g.arc(X(i),y,6+7*v,0,6.283);g.fillStyle=col(id);g.shadowColor=col(id);g.shadowBlur=14;g.fill()});
++ g.restore();
++}
+ 
+ /* readability guard: picks dark or light text from the background brightness, then adds only a faint soft veil if contrast is still weak */
+ function guard(g,cv,y0,y1,W,H){
+@@ -19,46 +46,47 @@ function guard(g,cv,y0,y1,W,H){
+   g.fillStyle=b;g.fillRect(-rx,-rx,2*rx,2*rx);g.restore()}
+  return dk;
+ }
++/* All canvas state (transform, alpha, shadow, letter spacing...) is saved and restored, so one quote's tilt or glow can
++   never leak into the next draw (it used to: each humor quote rotated every later image a bit more). */
+ export function draw(cv,s){
+- s={...s,w:fullWeights(s.w)}; // old saved quotes may lack newer emotions
+- const W=1080,H=1350,g=cv.getContext('2d'),R=rng(s.text+'|'+s.seed);
+- const ord=[...IDS].sort((a,b)=>s.w[b]-s.w[a]),pal=[];
+- ord.slice(0,3).forEach(k=>BY[k].palette.forEach(c=>pal.push([c,s.w[k]])));
++ const g=cv.getContext('2d');g.save();g.setTransform(1,0,0,1,0,0);
++ try{paint(g,cv,s)}finally{g.restore()}
++}
++function paint(g,cv,s){
++ const w=fullWeights(s.w),n=Math.max(0,Math.min(1,s.n??0)),W=1080,H=1350,R=rng(s.text+'|'+s.seed);
++ const ord=[...IDS].sort((a,b)=>w[b]-w[a]),flat=n>w[ord[0]]||w[ord[0]]<.2;     // flat = nothing stands out: neutral look
++ const arc=(s.arc||[]).filter(a=>a&&(a[0]==='neutral'||BY[a[0]])),useArc=!flat&&arc.length>1&&arc[0][0]!==arc[arc.length-1][0];
++ const pal=[];ord.slice(0,3).forEach(k=>BY[k].palette.forEach(c=>pal.push([c,w[k]])));
++ NEUTRAL_PALETTE.forEach(c=>pal.push([c,flat?1:n*.8]));
+  const pick=()=>{let t=pal.reduce((a,p)=>a+p[1],0)*R(),i=0;for(;i<pal.length-1;i++){t-=pal[i][1];if(t<=0)break}return pal[i][0]};
+- const gloom=EMOTIONS.reduce((a,e)=>a+(e.gloom||0)*s.w[e.id],0),lw=EMOTIONS.reduce((a,e)=>a+(e.light?s.w[e.id]:0),0),gr=g.createLinearGradient(0,0,W*R(),H);gr.addColorStop(0,dark(BY[ord[0]].palette[0],.55-.5*lw));gr.addColorStop(1,dark(BY[ord[1]].palette[1],.72-.6*lw));
++ const gloom=EMOTIONS.reduce((a,e)=>a+(e.gloom||0)*w[e.id],0),lw=EMOTIONS.reduce((a,e)=>a+(e.light?w[e.id]:0),0),gr=g.createLinearGradient(0,0,W*R(),H);
++ /* the background runs from the mood of the opening to the mood of the ending when the quote turns */
++ const c0=flat?'neutral':useArc?arc[0][0]:ord[0],c1=flat?'neutral':useArc?arc[arc.length-1][0]:ord[1];
++ gr.addColorStop(0,dark(pc(c0,0),.55-.5*lw));gr.addColorStop(1,dark(pc(c1,1),.72-.6*lw));
+  g.globalCompositeOperation='source-over';g.fillStyle=gr;g.fillRect(0,0,W,H);
+  g.globalCompositeOperation='screen';
+  for(let i=0;i<10;i++){const x=R()*W,y=R()*H,r=250+R()*450,c=pick(),d=g.createRadialGradient(x,y,0,x,y,r);d.addColorStop(0,rgba(c,.5));d.addColorStop(1,rgba(c,0));g.fillStyle=d;g.fillRect(0,0,W,H)}
+  g.globalCompositeOperation='source-over';
+  /* every emotion paints its own motif, in registry order, if it is present enough */
+- for(const e of EMOTIONS){const a=s.w[e.id];if(a>.1)e.motif(g,{W,H,R,pick,strength:Math.min(1,a*2.4)})}
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
+- 
++ for(const e of EMOTIONS){const a=w[e.id];if(a>.1)e.motif(g,{W,H,R,pick,strength:Math.min(1,a*2.4)});g.globalCompositeOperation='source-over'}
+  for(let i=0;i<14000;i++){g.fillStyle=R()<.5?'rgba(255,255,255,.05)':'rgba(0,0,0,.07)';g.fillRect(R()*W,R()*H,1.5,1.5)}
+  let v=g.createRadialGradient(W/2,H/2,H*.3,W/2,H/2,H*.85);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,`rgba(0,0,0,${(.4+.3*gloom)*(1-.65*lw)})`);g.fillStyle=v;g.fillRect(0,0,W,H);
+  v=g.createRadialGradient(W/2,H/2,0,W/2,H/2,650);v.addColorStop(0,`rgba(0,0,0,${.34*(1-lw)})`);v.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=v;g.fillRect(0,0,W,H);
+  /* text */
+- const raw=s.text.trim()||'…',rtl=/[\u0590-\u05FF]/.test(raw),S={...(s.w[ord[0]]>=.2?BY[ord[0]].style:NEUTRAL)};
++ const raw=s.text.trim()||'…',rtl=isRTL(raw),S=flat?{...NEUTRAL}:blend(w,ord);
+  const fk=rtl&&S.f==='script'?'serif':S.f,fam=F[fk],afam=fk==='script'?F.serif:fam,ls=rtl?0:S.ls||0,it=S.i&&!rtl?'italic ':'',up=S.up&&!rtl,text=up?raw.toUpperCase():raw;
+  const MG=120,sa=S.al==='s',x=sa?(rtl?W-MG:MG):W/2,mw=W-2*MG-(sa?40:0);
+  g.direction=rtl?'rtl':'ltr';g.textAlign=sa?'start':'center';g.textBaseline='alphabetic';
+- const setF=(w,sz)=>{g.font=`${it}${w} ${sz}px ${fam}`;if('letterSpacing' in g)g.letterSpacing=ls+'px'};
++ const setF=(wt,sz)=>{g.font=`${it}${wt} ${sz}px ${fam}`;if('letterSpacing' in g)g.letterSpacing=ls+'px'};
+  let fs=Math.round(86*S.sz),lines,lh;
+  for(;fs>=28;fs-=2){setF(S.w,fs);lines=wrap(g,text,mw);lh=fs*(S.lh||1.3);if(lines.length*lh<=740)break}
++ fs=Math.max(fs,28);
++ const maxL=Math.floor(740/lh);                                                  // a very long quote is cut with "…" instead of running off the image
++ if(lines.length>maxL){lines=lines.slice(0,maxL);lines[maxL-1]=lines[maxL-1].replace(/[\s,.;:!?-]*$/,'')+'…'}
+  const au=s.author.trim(),bk=s.book.trim(),bh=lines.length*lh+(au?56:0)+(bk?50:0)+((au||bk)?70:0),top=Math.max(130,Math.min(H-130-bh,H*S.pos-bh/2));
+  const dk=guard(g,cv,top-70,top+bh+70,W,H);
+- if(dk){const P=BY[ord[0]].palette;Object.assign(S,{col:dark(P[0],.82),ac:dark(P[1],.75),gc:'#ffffff',sh:'rgba(255,255,255,.4)',qm:'rgba(0,0,0,.08)',bk:'rgba(30,20,10,.85)'})}
++ if(dk){const P=flat?NEUTRAL_PALETTE:BY[ord[0]].palette;Object.assign(S,{col:dark(P[0],.82),ac:dark(P[1],.75),gc:'#ffffff',sh:'rgba(255,255,255,.4)',qm:'rgba(0,0,0,.08)',bk:'rgba(30,20,10,.85)'})}
++ if(useArc)ribbon(g,arc,W,H,rtl);
+  if(S.fr){g.strokeStyle=rgba(S.ac,.3);g.lineWidth=2;g.beginPath();if(S.fr==='round'&&g.roundRect)g.roundRect(56,56,W-112,H-112,70);else g.rect(56,56,W-112,H-112);g.stroke();if(S.fr==='thin'){g.strokeStyle=rgba(S.ac,.14);g.strokeRect(76,76,W-152,H-152)}}
+  if(S.rot){g.translate(W/2,H/2);g.rotate(S.rot);g.translate(-W/2,-H/2)}
+  if(!S.nq){g.shadowBlur=0;g.font=`320px ${F.serif}`;g.fillStyle=S.qm||'rgba(255,255,255,.13)';g.fillText(rtl?'”':'“',x,top+150)}
+@@ -75,5 +103,4 @@ export function draw(cv,s){
+  if(au||bk){g.fillStyle=rgba(S.ac,.65);g.fillRect(sa?(rtl?x-120:x):x-60,y-20,120,2)}
+  if(au){g.font=`600 42px ${afam}`;g.fillStyle=S.ac;g.fillText((rtl?'':'— ')+au,x,y+42);y+=56}
+  if(bk){g.font=`${rtl?'':'italic '}400 34px ${afam}`;g.fillStyle=S.bk||'rgba(255,250,240,.85)';g.fillText(bk,x,y+40)}
+- g.shadowBlur=0;if('letterSpacing' in g)g.letterSpacing='0px';
+ }
+diff --git a/js/text.js b/js/text.js
+new file mode 100644
+index 0000000..9d8c1a8
+--- /dev/null
++++ b/js/text.js
+@@ -0,0 +1,27 @@
++/* Small text helpers shared by the analyzer, the keyword fallback and the renderer. No DOM, so they run in Node too. */
++
++/* Hebrew vowel points and cantillation marks (common in pasted Tanakh text) are removed: the AI model and the keyword
++   matcher read plain letters. Maqaf and paseq become spaces, sof pasuq a full stop. */
++export const plain=t=>String(t).replace(/[\u05BE\u05C0]/g,' ').replace(/\u05C3/g,'.').replace(/[\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7]/g,'');
++export const words=t=>plain(t).split(/\s+/).filter(Boolean);
++export const wordCount=t=>words(t).length;
++
++/* Right-to-left only when Hebrew letters are the majority script (one Hebrew word in an English quote stays left-to-right). */
++export function isRTL(t){let h=0,l=0;for(const c of String(t)){const k=c.charCodeAt(0);if(k>=0x5D0&&k<=0x5EA)h++;else if((k>=65&&k<=90)||(k>=97&&k<=122))l++}return h>0&&h>=l}
++
++/* Splits a quote into the pieces whose moods are read separately (this is what makes an emotional "arc" possible).
++   Sentence ends, line breaks and a turn such as ", but ..." / "אבל ..." start a new piece. Fragments under `min` words
++   are merged into a neighbour; more than `max` pieces are merged down; very short quotes stay whole. */
++const TURN=/\s+(?=(?:but|however|although|אבל|אך|אולם)(?![\p{L}]))/iu;
++export function segment(text,{min=3,max=6,minWords=8}={}){
++  const src=plain(text).trim(),wc=p=>p.split(/\s+/).length;let parts=[];
++  for(const line of src.split(/\n+/))
++    for(const sent of line.match(/[^.!?…;:]+(?:[.!?…;:]+["'”’»)\]]*)?/g)||[])
++      for(const clause of sent.split(TURN))parts.push(clause.trim());
++  parts=parts.filter(p=>/[\p{L}\p{N}]/u.test(p));
++  const out=[];
++  for(const p of parts){if(out.length&&(wc(out[out.length-1])<min||wc(p)<min))out[out.length-1]+=' '+p;else out.push(p)}
++  while(out.length>max){let bi=0,bv=1e9;for(let i=0;i<out.length-1;i++){const v=wc(out[i])+wc(out[i+1]);if(v<bv){bv=v;bi=i}}out.splice(bi,2,out[bi]+' '+out[bi+1])}
++  const total=out.reduce((a,p)=>a+wc(p),0);
++  return out.length<2||total<minWords?[src]:out;
++}
+diff --git a/js/util.js b/js/util.js
+index 1c7e389..4128059 100644
+--- a/js/util.js
++++ b/js/util.js
+@@ -3,5 +3,6 @@ export const $=s=>document.querySelector(s);
+ /* ---------- generative art ---------- */
+ export function rng(s){let h=1779033703^s.length;for(let i=0;i<s.length;i++){h=Math.imul(h^s.charCodeAt(i),3432918353);h=h<<13|h>>>19}let a=h>>>0;return()=>{a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+ export const rgba=(h,a)=>{const n=parseInt(h.slice(1),16);return `rgba(${n>>16},${n>>8&255},${n&255},${a})`};
++export const mix=(a,b,t)=>{const x=parseInt(a.slice(1),16),y=parseInt(b.slice(1),16),m=s=>Math.round((x>>s&255)*(1-t)+(y>>s&255)*t);return '#'+[16,8,0].map(s=>m(s).toString(16).padStart(2,'0')).join('')};
+ export const dark=(h,t)=>{const n=parseInt(h.slice(1),16);return '#'+[(n>>16)*(1-t)+10*t,(n>>8&255)*(1-t)+10*t,(n&255)*(1-t)+18*t].map(v=>(v|0).toString(16).padStart(2,'0')).join('')};
+ export function wrap(g,t,mw){const out=[];t.split('\n').forEach(p=>{let l='';p.split(/\s+/).filter(Boolean).forEach(w=>{const c=l?l+' '+w:w;if(g.measureText(c).width>mw&&l){out.push(l);l=w}else l=c});out.push(l)});return out}
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..33761b9
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,6 @@
++{
++  "name": "quotebook",
++  "private": true,
++  "type": "module",
++  "scripts": {"test": "node --test test/*.test.mjs"}
++}
+diff --git a/sw.js b/sw.js
+index cd132da..d0ffc02 100644
+--- a/sw.js
++++ b/sw.js
+@@ -1,6 +1,6 @@
+ // v2: offline app shell + cached CDN scripts. Model files are handled by js/offline.js (File System API).
+ // Bump V to force-clear old caches after a big change.
+-const V = 'qb-v2';
++const V = 'qb-v3';
+ const CDN = /(^|\.)(jsdelivr\.net|esm\.sh|unpkg\.com|cdnjs\.cloudflare\.com|skypack\.dev)$/;
+ 
+ self.addEventListener('install', e => {
+diff --git a/test/analyze.test.mjs b/test/analyze.test.mjs
+new file mode 100644
+index 0000000..04cef47
+--- /dev/null
++++ b/test/analyze.test.mjs
+@@ -0,0 +1,35 @@
++import test from 'node:test';import assert from 'node:assert/strict';
++import {analyzeFull,useEmbedder,modelReady,TUNE} from '../js/analyze.js';import {IDS} from '../js/emotions/index.js';import {fakeEmbed} from './helpers.mjs';
++const sum=r=>IDS.reduce((a,id)=>a+r.w[id],0)+r.n,topOf=r=>IDS.reduce((a,b)=>r.w[b]>r.w[a]?b:a);
++
++test('keyword fallback (no model): weights+neutral sum to 1, no hits = neutral',async()=>{
++  assert.equal(modelReady(),false);
++  const none=await analyzeFull('The meeting is on Tuesday in the room by the stairs.');
++  assert.ok(none.n>.99&&Math.abs(sum(none)-1)<1e-9);
++  const sad=await analyzeFull('Only sorrow, grief and loss remain.');
++  assert.equal(topOf(sad),'sadness');assert.ok(sad.w.sadness>sad.n);
++});
++test('keyword fallback: arc across a turn',async()=>{
++  const r=await analyzeFull('Only sorrow and grief and loss remained for years. But then laughter, joy and delight returned.');
++  assert.ok(r.arc&&r.arc.length>=2);assert.equal(r.arc[0][0],'sadness');assert.equal(r.arc[r.arc.length-1][0],'joy');
++});
++test('model path: calibrated scoring, neutral class, arc',async()=>{
++  await useEmbedder(fakeEmbed);assert.ok(modelReady());
++  const sad=await analyzeFull('sorrow, grief and loss');
++  assert.equal(topOf(sad),'sadness');assert.ok(Math.abs(sum(sad)-1)<1e-9);assert.ok(sad.w.sadness>sad.n);
++  const flat=await analyzeFull('The report has twelve pages and a short appendix.');
++  assert.ok(flat.n>sad.n,'an everyday sentence is more neutral than an emotional one');
++  assert.ok(flat.n>.5,'neutral weight for everyday text: '+flat.n);
++  const arc=await analyzeFull('loneliness and tears, sorrow, grief and loss. then joy, delight and laughter, a happy celebration and good news.');
++  assert.ok(arc.arc,'arc detected');assert.equal(arc.arc[0][0],'sadness');assert.equal(arc.arc.at(-1)[0],'joy');
++});
++test('model path: single-mood quote has no arc; Hebrew with niqqud works',async()=>{
++  const r=await analyzeFull('sorrow, grief and loss. loneliness and tears, heartbreak and regret.');
++  assert.equal(r.arc,null);
++  const h=await analyzeFull('עֶצֶב, אֵבֶל וַאֲבֵדָה. בְּדִידוּת וְדִמְעוֹת, שְׁבִירַת לֵב וְחֲרָטָה');
++  assert.equal(topOf(h),'sadness');
++});
++test('TUNE.NEUTRAL_Z moves weight to neutral',async()=>{
++  const a=(await analyzeFull('sorrow, grief and loss')).n;TUNE.NEUTRAL_Z=6;const b=(await analyzeFull('sorrow, grief and loss')).n;TUNE.NEUTRAL_Z=2.5;
++  assert.ok(b>a);
++});
+diff --git a/test/helpers.mjs b/test/helpers.mjs
+new file mode 100644
+index 0000000..3d79738
+--- /dev/null
++++ b/test/helpers.mjs
+@@ -0,0 +1,7 @@
++/* Deterministic stand-in for the embedding model: hashed bag-of-words. It tests the pipeline's logic, not model quality. */
++const D=256,h=s=>{let x=2166136261;for(const c of s){x^=c.charCodeAt(0);x=Math.imul(x,16777619)}return (x>>>0)%D};
++export const fakeEmbed=async texts=>texts.map(t=>{
++  const v=new Float32Array(D);
++  t.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).forEach(w=>{v[h(w)]+=1;if(w.length>4)v[h(w.slice(0,4))]+=.6});
++  const n=Math.hypot(...v)||1;return Array.from(v,x=>x/n);
++});
+diff --git a/test/lexicon.test.mjs b/test/lexicon.test.mjs
+new file mode 100644
+index 0000000..7c618be
+--- /dev/null
++++ b/test/lexicon.test.mjs
+@@ -0,0 +1,24 @@
++import test from 'node:test';import assert from 'node:assert/strict';
++import {EMOTIONS} from '../js/emotions/index.js';import {compile} from '../js/lexicon.js';
++const lex=compile(EMOTIONS),hit=t=>Object.entries(lex(t)).filter(([,v])=>v).map(([k])=>k);
++test('no substring false positives (regressions)',()=>{
++  assert.deepEqual(hit('We start walking toward the station, a pasta place is nearby, think about it'),[]);
++  assert.deepEqual(hit('אבל אני רוצה ללכת הביתה'),[]);                       // "but" is not grief
++});
++test('whole words and inflections match',()=>{
++  assert.deepEqual(hit('She was hating the war'),['anger']);
++  assert.ok(hit('Tears and sorrow').includes('sadness'));
++  assert.ok(hit('A starry sky of stars').includes('wonder'));
++});
++test('phrases and stems',()=>{
++  assert.ok(hit('You must never give up').includes('courage'));
++  assert.ok(hit('Memories of childhood').includes('nostalgia'));
++});
++test('Hebrew prefixes, niqqud, short stems',()=>{
++  assert.ok(hit('ובתפילה אני עומד').includes('reverence'));
++  assert.ok(hit('הכעס שלי גדל').includes('anger'));
++  assert.ok(hit('בְּרֵאשִׁית בָּרָא אֱלֹהִים').includes('reverence'));
++  assert.ok(hit('הלב שלי').includes('love'));
++  assert.deepEqual(hit('לבנה'),[]);assert.deepEqual(hit('שלב ראשון וכלב קטן'),[]);   // "white", "stage", "dog" are not "heart"
++  assert.ok(hit('תודה רבה על הכל').includes('gratitude'));
++});
+diff --git a/test/registry.test.mjs b/test/registry.test.mjs
+new file mode 100644
+index 0000000..dfdd2bd
+--- /dev/null
++++ b/test/registry.test.mjs
+@@ -0,0 +1,21 @@
++import test from 'node:test';import assert from 'node:assert/strict';
++import fs from 'node:fs';import {EMOTIONS,IDS} from '../js/emotions/index.js';
++test('every file in js/emotions/ is registered',()=>{
++  const files=fs.readdirSync(new URL('../js/emotions/',import.meta.url)).filter(f=>f.endsWith('.js')&&f!=='index.js').map(f=>f.slice(0,-3)).sort();
++  assert.deepEqual([...IDS].sort(),files);
++});
++test('emotion modules are well formed',()=>{
++  assert.equal(new Set(IDS).size,IDS.length);
++  for(const e of EMOTIONS){
++    assert.ok(e.names.en&&e.names.he,e.id+' names');
++    assert.equal(e.palette.length,3,e.id+' palette');
++    for(const c of [...e.palette,e.style.col,e.style.ac])assert.match(c,/^#[0-9a-f]{6}$/i,e.id+' color '+c);
++    for(const l of ['en','he'])assert.ok(e.anchors[l].length>=3,e.id+' anchors '+l);
++    assert.ok(e.keywords.length>=3,e.id+' keywords');
++    assert.equal(typeof e.motif,'function');
++  }
++});
++test('no keyword is shared by two emotions (ambiguous evidence)',()=>{
++  const seen=new Map();
++  for(const e of EMOTIONS)for(const k of e.keywords){const key=k.trim().toLowerCase();assert.ok(!seen.has(key)||seen.get(key)===e.id,`"${key}" in ${seen.get(key)} and ${e.id}`);seen.set(key,e.id)}
++});
+diff --git a/test/text.test.mjs b/test/text.test.mjs
+new file mode 100644
+index 0000000..effb7f4
+--- /dev/null
++++ b/test/text.test.mjs
+@@ -0,0 +1,16 @@
++import test from 'node:test';import assert from 'node:assert/strict';
++import {segment,plain,isRTL} from '../js/text.js';
++test('segment: sentences and turns',()=>{
++  assert.equal(segment('I fell down, but I got back up. Nobody saw it happen, and that was fine.').length,3);
++  assert.deepEqual(segment('Short one.'),['Short one.']);
++});
++test('segment: never more than 6 parts, nothing lost',()=>{
++  const t=Array.from({length:12},(_,i)=>`This is sentence number ${i} here.`).join(' ');
++  const s=segment(t);assert.ok(s.length<=6);assert.equal(s.join(' ').split(/\s+/).length,t.split(/\s+/).length);
++});
++test('plain strips niqqud/te\'amim, keeps maqaf as space',()=>{
++  assert.equal(plain('בְּרֵאשִׁ֖ית כל־האדם׃'),'בראשית כל האדם.');
++});
++test('isRTL uses the majority script',()=>{
++  assert.equal(isRTL('Hello שלום world'),false);assert.equal(isRTL('שלום עולם hello'),true);assert.equal(isRTL('plain'),false);
++});

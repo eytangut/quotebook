@@ -11,9 +11,10 @@ import courage from './courage.js';
 import humor from './humor.js';
 import freedom from './freedom.js';
 import reverence from './reverence.js';
+import gratitude from './gratitude.js';
 
 // Registry. Order = drawing order of the motifs (later ones paint on top). To add an emotion: import it and add it here.
-export const EMOTIONS=[joy, calm, sadness, anger, hope, wonder, love, dread, nostalgia, courage, humor, freedom, reverence];
+export const EMOTIONS=[joy, calm, sadness, anger, hope, wonder, love, dread, nostalgia, courage, humor, freedom, reverence, gratitude];
 export const IDS=EMOTIONS.map(e=>e.id);
 export const BY=Object.fromEntries(EMOTIONS.map(e=>[e.id,e]));
 export const neutral=()=>Object.fromEntries(IDS.map(id=>[id,1/IDS.length]));

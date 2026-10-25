@@ -1,6 +1,6 @@
 // v2: offline app shell + cached CDN scripts. Model files are handled by js/offline.js (File System API).
 // Bump V to force-clear old caches after a big change.
-const V = 'qb-v2';
+const V = 'qb-v3';
 const CDN = /(^|\.)(jsdelivr\.net|esm\.sh|unpkg\.com|cdnjs\.cloudflare\.com|skypack\.dev)$/;
 
 self.addEventListener('install', e => {

@@ -7,10 +7,10 @@ export default {
   light: true,                       // true = bright background + dark text
   palette: ['#ff9e80', '#ffd166', '#c77dff'],   // colors for the background blobs
   anchors: {                       // sentences the AI compares each quote against
-    en: ['hope, a new beginning and dawn', 'courage, perseverance and growth', 'believing in a better future'],
-    he: ['תקווה, התחלה חדשה וזריחה', 'אומץ, התמדה וצמיחה', 'אמונה בעתיד טוב יותר'],
+    en: ['hope, a new beginning and dawn', 'trust that things will get better, a seed beginning to grow', 'believing in a better future'],
+    he: ['תקווה, התחלה חדשה וזריחה', 'אמונה שהדברים ישתפרו, זרע שמתחיל לצמוח', 'אמונה בעתיד טוב יותר'],
   },
-  keywords: ['hope', 'dream', 'begin', 'dawn', 'future', 'תקוו', 'חלום', 'התחל', 'עתיד'],   // fallback matching if the AI model is unavailable
+  keywords: ['hope', 'hopeful', 'dream', 'begin', 'beginning', 'dawn', 'sunrise', 'tomorrow', 'future', 'תקוו', 'חלום', 'התחל', 'זריח', 'עתיד', 'מחר'],   // fallback matching if the AI model is unavailable
   style: {f:'serif', w:500, sz:1.02, al:'c', pos:0.42, col:'#fff8e6', ac:'#ffd08a', fx:'glow', gc:'#ffb36b'},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

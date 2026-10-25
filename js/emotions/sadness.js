@@ -8,9 +8,9 @@ export default {
   palette: ['#3a0ca3', '#4361ee', '#1d3557'],   // colors for the background blobs
   anchors: {                       // sentences the AI compares each quote against
     en: ['sorrow, grief and loss', 'loneliness and tears', 'heartbreak and regret'],
-    he: ['עצב, אבל וגעגוע', 'בדידות ודמעות', 'שבירת לב וחרטה'],
+    he: ['עצב, אבל ואובדן', 'בדידות ודמעות', 'שבירת לב וחרטה'],
   },
-  keywords: ['sad', 'grief', 'tear', 'lonely', 'loss', 'עצב', 'דמע', 'בדיד', 'אבל'],   // fallback matching if the AI model is unavailable
+  keywords: ['sad', 'sadness', 'sorrow', 'grief', 'grieve', 'tear', 'tears', 'lonely', 'loneliness', 'loss', 'mourn*', 'עצב', 'דמע', 'בדיד', 'אבלות', 'שכול', 'כאב', 'בוכ'],   // fallback matching if the AI model is unavailable
   style: {f:'serif', w:400, i:1, sz:0.92, al:'s', pos:0.62, col:'#e3e9f7', ac:'#9db4e8', fx:'soft', lh:1.4},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

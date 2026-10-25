@@ -10,7 +10,7 @@ export default {
     en: ['funny, witty and humorous joke', 'sarcasm, irony and playful teasing', 'silly, absurd and lighthearted fun'],
     he: ['מצחיק, שנון ובדיחה', 'סרקזם, אירוניה ושובבות', 'מטופש, אבסורדי וקליל'],
   },
-  keywords: ['funny', 'joke', 'laugh', 'silly', 'irony', 'מצחיק', 'בדיח', 'אירוני'],   // fallback matching if the AI model is unavailable
+  keywords: ['funny', 'joke', 'jokes', 'silly', 'irony', 'מצחיק', 'בדיח', 'אירוני'],   // fallback matching if the AI model is unavailable
   style: {f:'sans', w:700, sz:1, al:'c', pos:0.5, col:'#ffffff', ac:'#ffe7f0', fx:'hard', gc:'#8338ec', rot:-0.03, lh:1.25},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

@@ -1,0 +1,8 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quotebook – detection eval</title><link rel="stylesheet" href="css/style.css">
+<style>body{padding:18px;max-width:900px;margin:0 auto}label{display:inline-block;margin:6px 14px 6px 0}#miss{font-size:14px;line-height:1.5;color:var(--mut)}#sum{font-weight:600;margin:10px 0}</style></head>
+<body><h1>Detection eval</h1>
+<p class="info">Runs the real model on the labelled sentences in <code>js/eval-set.js</code> and shows how often the top mood is right. Move the sliders to try other settings (they re-score instantly), then copy good values into <code>TUNE</code> in <code>js/analyze.js</code>.</p>
+<div id="st" class="info"></div><div id="knobs"></div><div id="sum"></div><h2>Misses</h2><ul id="miss"></ul>
+<script type="module" src="js/eval.js"></script></body></html>

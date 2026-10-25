@@ -7,10 +7,10 @@ export default {
   light: false,                       // true = bright background + dark text
   palette: ['#3a2a6b', '#c9a227', '#1b1035'],   // colors for the background blobs
   anchors: {                       // sentences the AI compares each quote against
-    en: ['faith, prayer and reverence for God', 'holiness, spirituality and sacred tradition', 'gratitude, humility and blessing'],
-    he: ['אמונה, תפילה ויראת שמיים', 'קדושה, רוחניות ומסורת', 'הודיה, ענווה וברכה'],
+    en: ['faith, prayer and reverence for God', 'holiness, spirituality and sacred tradition', 'humility, blessing and awe before the divine'],
+    he: ['אמונה, תפילה ויראת שמיים', 'קדושה, רוחניות ומסורת', 'ענווה, ברכה ויראה מפני הבורא'],
   },
-  keywords: ['god', 'faith', 'prayer', 'holy', 'bless', 'אלוה', 'אמונה', 'תפיל', 'קדוש', 'ברכ'],   // fallback matching if the AI model is unavailable
+  keywords: ['god', 'faith', 'prayer', 'pray', 'holy', 'sacred', 'divine', 'bless', 'blessing', 'אלוה', 'אלהים', 'אמונה', 'תפיל', 'קדוש', 'קדש', 'ברכ', 'בורא', 'שמים'],   // fallback matching if the AI model is unavailable
   style: {f:'serif', w:500, sz:0.98, al:'c', pos:0.5, col:'#fff6dc', ac:'#e6c65c', fx:'glow', gc:'#c9a227', fr:'thin', lh:1.4},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

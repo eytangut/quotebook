@@ -10,7 +10,7 @@ export default {
     en: ['courage, strength and determination', 'never give up, discipline and hard work', 'overcoming obstacles and standing tall'],
     he: ['אומץ, כוח ונחישות', 'לא לוותר, משמעת ועבודה קשה', 'להתגבר על מכשולים ולעמוד איתן'],
   },
-  keywords: ['courage', 'brave', 'strong', 'never give up', 'strength', 'אומץ', 'חזק', 'נחישות', 'כוח'],   // fallback matching if the AI model is unavailable
+  keywords: ['courage', 'brave', 'bravery', 'strong', 'strength', 'determin*', 'never give up', 'don\'t give up', 'persever*', 'אומץ', 'חזק', 'נחישות', 'כוח', 'התמדה', 'לא לוותר'],   // fallback matching if the AI model is unavailable
   style: {f:'serif', w:800, sz:1.02, al:'s', pos:0.42, col:'#fff4e6', ac:'#ffb45a', fx:'hard', gc:'#a63d00', ls:1, up:1, lh:1.2, nq:1},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

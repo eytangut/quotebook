@@ -13,3 +13,5 @@ jobs:
             cp "$f" /tmp/check.mjs
             node --check /tmp/check.mjs || { echo "Syntax error in $f"; exit 1; }
           done
+      - name: Tests
+        run: npm test

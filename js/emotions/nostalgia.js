@@ -10,7 +10,7 @@ export default {
     en: ['nostalgia, memories of childhood and the good old days', 'longing for the past and the passing of time', 'old photographs, yesterday and remembering'],
     he: ['נוסטלגיה, זיכרונות ילדות וימים עברו', 'געגוע לעבר וחלוף הזמן', 'תמונות ישנות, אתמול והזיכרון'],
   },
-  keywords: ['memor', 'remember', 'yesterday', 'childhood', 'past', 'זכר', 'ילדות', 'געגוע', 'פעם'],   // fallback matching if the AI model is unavailable
+  keywords: ['memor*', 'remember', 'yesterday', 'childhood', 'nostalgi*', 'old days', 'the past', 'זכר', 'זיכרונ', 'ילדות', 'געגוע', 'נוסטלג', 'ימים עברו'],   // fallback matching if the AI model is unavailable
   style: {f:'serif', w:400, i:1, sz:0.98, al:'c', pos:0.5, col:'#fdf1d8', ac:'#e8c48a', fx:'soft', lh:1.4},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){

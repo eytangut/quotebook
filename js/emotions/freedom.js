@@ -10,7 +10,7 @@ export default {
     en: ['freedom, independence and open sky', 'adventure, travel and wandering free', 'breaking free and being yourself'],
     he: ['חירות, עצמאות ושמיים פתוחים', 'הרפתקה, טיול וחופש', 'להשתחרר ולהיות עצמך'],
   },
-  keywords: ['free', 'wander', 'sky', 'journey', 'adventure', 'חופש', 'חירות', 'דרך', 'מסע'],   // fallback matching if the AI model is unavailable
+  keywords: ['free', 'freedom', 'liberty', 'wander', 'sky', 'horizon', 'journey', 'adventure', 'travel', 'wild', 'חופש', 'חירות', 'מסע', 'הרפתק', 'לנדוד', 'אופק'],   // fallback matching if the AI model is unavailable
   style: {f:'geo', w:400, sz:1, al:'c', pos:0.4, col:'#ffffff', ac:'#e0f2ff', fx:'soft', ls:1, lh:1.4},
   // Paints this emotion's decoration. g = canvas context, strength = 0..1, R() = seeded random (never use Math.random).
   motif(g,{W,H,R,pick,strength}){
